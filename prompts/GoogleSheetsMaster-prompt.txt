@@ -1,0 +1,73 @@
+Create a new class called GoogleSheetsMaster This class will use the Google API for manipulating Google Sheets.  This class will use the credentials found in credentials.json for the Google API.
+
+Add a read_territories() method that will read a spreadsheet template.  It will return a map where key=string (example 34,35) values will be a list of objects.  Each object has the following fields: 
+- squad (number, example: 34)
+- territories covered (comma seperated list of 2 digit integer territories)
+
+# Format of Google Spreadsheet:
+There are two tables on this one spreadsheet.  The first table represents two squad shifts.  Ie. if there are two squads on duty, each squad will cover a group of territories.
+The second table is when there are 3 squads on duty
+
+# Table formats
+Two squad table:
+Starts on B1.  B1 - F1 is the headers (Key, Squad, Covering, squad, Covering).  Looking at one line (for example B2 - F2) has the following fields: ["34,35", 34, "34,42,54", 35, "35,43"].  For this line, the key is a string: "34,35".  It means that when squads 34 and 35 are on duty, 34 covers 34,42,54 and squad 35 covers territories 35,43.
+
+Three squad table: 
+Starts on H1 - N1.  Again, the first row is a header.  The structure is the same as for two squads, but there are 3 squads with their territories defined.
+
+Read both of these tables, and put them into one a map that is returned. 
+
+
+---
+Abstract: Assigning territories to schedules
+
+In calendar_builder.py, create a new method called assign_territories.  assign_territories will take a schedule: List[DaySchedule] parameter.  It will call the GoogleSheetsMaster class, read_territories (passing id: 1bhmLdyBU9-rYmzBj-C6GwMXZCe9fvdb_hKd62S19Pvs).  Iterate over the schedule, create a key by combining squads on the shift (sort the squad ids, put them together in a string with a comma seperating (no spaces).  That is the key) class to get the territory assignments.  Assign the territories to the territories attribute that is on the class Squad.  
+
+in calendar_builder.py, after calling generate_month_schedule(), assign_territories() to the list, then serialize them
+
+
+---
+Abstract: Assign tango:
+
+in calendar_builder add a field in Shift called Tango that will be an integer.  
+Add a method called "assign_tango".  This method will be called after assign_territories is called.  It will also take the schedule as a parameter.  This method will assign tango.  Tango is one of the squads that is in a shift (null if no squads on shift).  this method should assign tango so that all squads operate as tango for (close to) the same number of hours (for the month).  Hours are determined by counting the hours between start_time and end_time of the shift.
+
+Add another method to calendar_builder that will collect stats from the schedule.  Return the following statistics: 
+- Number of hours scheduled by squad
+- Number of tango hours by squad
+- Number of shifts where there is only one squad on duty
+
+---
+Abstract: Format shifts
+
+Create a new class that will format a schedule so that it can be posted to Google calendar.  Create a method called format_day.  This takes a DaySchedule object and formats it in csv format to be posted into Google sheet.
+
+# Formatting DaySchedule instructions: 
+The target will be a Google Sheet (spreadsheet).  Each day will occupy 10 rows x 4 columns.  The first row, first col holds the day number.  Starting from row 1 onward, each row represents a shift.  (Note: when squads are put into a shift, they should be sorted)
+- Col 0 = start and end times.  Format is start_time "-" end_time.  Followed by \n character and tango.  For example, take start_time = 0600, end_time = 1800.  Tango is 54.  Format this to: "0600 - 1800\n(Tango: 54)"
+- Col 1 = Squad 1.  Format of the squad is: "id" followed by "\n" and then territories covered.  For example {"id":43, "territories": [34,43]} gets formatted to: "43\n[34,43]".  If the territories is an empty list: put "No Crew".  For example: {"id":43, "territories": []} gets formatted to: "43\n[No Crew]"
+- Col 2 and Col 3: Squad 2 and Squad 3 formatted the same way as Col 1.
+
+There should be a method to serialize from DaySchedule -> csv and deserialize from csv -> DaySchedule.
+
+---
+Abstract: Populate month template with schedule
+
+in calendar_builder.py accept two more parameters (optional): 1) populate_google_calendar (boolean) 2) google_calendar_tab - the name of the tab to which the calendar data should be written.
+
+After building the schedule (in calendar_builder.py), if the populate_google_calendar is set, then invoke a new method on GoogleSheetsMaster that will populate the calendar.  it should take as a parameter Schedule and the template name (if template name is not provided, default it to Month Year (eg: January 2026)).  Open the template, and if the cell A100 contains the word "editable" then we can proceed with changes, otherwise stop.
+
+The schedule passed will have multiple days in it.  All updates must be done in one invocation to Google Docs.  So if there are 30 days, the CSV will be formatted for each of the 30 days, and one update will apply all to the template. 
+
+The format of the template is as follows:
+- Each row in the calendar (consists of 10 spreadsheet rows) is a week in the month.  Starts with Sunday, ends with Saturday.
+- The first cell is B6, and spans until AC65
+- Each day is the 10x4 grid in the output which is formatted when calendar_builder.py calls: serialize_month_to_csv on ScheduleFormatter
+
+
+
+
+python calendar_builder.py --month 1 --year 2026 --populate-google-calendar --google-calendar-tab "Calendar Test"
+
+
+I ran calendar_builder.py for 1/2026.  When it populates the days on the calendar, the GoogleSheetsMaster started the month by putting the first day in the first cell (which begins at B6).  A calendar is organized so that each row (10 spreadsheet rows) is a week that starts with Sunday.  Since the month of Jan starts on Thrusday, it should have put the first day in cell R6 (Sunday - Wednesday (each 4 cols wide) should have been skipped (typically empty cells should have ",,").  Please fix the GoogleSheetsMaster to recognize that the first day in the Schedule is 1, and the first begins on Thursday.  If I pass one day, which is the 20th - then it should start at J36 since this is the 4th week (skip 10 rows for each week) and 3rd day, so skip the first two

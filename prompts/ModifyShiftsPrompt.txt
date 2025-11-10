@@ -1,0 +1,207 @@
+Perfect — here’s your **revised and polished spec** with that new rule added clearly under **Calendar Format Rules** 👇
+
+---
+
+## **Abstract**
+
+Enhance the existing calendar system by introducing a `CalendarCommands` class that interprets calendar-related actions (like adding or removing shifts) and updates Google Sheets accordingly.
+
+The system will:
+
+* Separate data models into a dedicated module.
+* Extend the `GoogleSheetsMaster` class with methods to read and write individual day schedules.
+* Implement calendar manipulation logic based on defined `CalendarFormat` rules.
+* Provide a `CalendarCommands` class that interprets command-style inputs and performs granular updates to the schedule grid.
+
+---
+
+## **1. Refactor Data Models**
+
+* Move all existing `@dataclass` definitions from **`calendar_builder.py`** into a new file: **`calendar_models.py`**.
+* Update imports in all dependent modules to import from this new file.
+
+---
+
+## **2. Extend `GoogleSheetsMaster`**
+
+### **New Method: `get_day(tab, day)`**
+
+**Purpose:**
+Retrieve a specific day’s schedule from a given tab in the Google Sheet.
+
+**Process:**
+
+1. Identify the day’s grid boundaries based on `CalendarFormat` (see rules below).
+2. Read the corresponding grid area from the sheet.
+3. Use `ScheduleFormatter.deserialize_from_csv()` to convert the CSV-style grid data into a `DaySchedule` object.
+4. Return the `DaySchedule`.
+
+---
+
+### **New Method: `put_day(tab, day, DayShift)`**
+
+**Purpose:**
+Write a `DayShift` (or `DaySchedule`) back into the appropriate grid area for the given day.
+
+**Process:**
+
+1. Use `ScheduleFormatter.serialize_to_csv(DayShift)` to format the data.
+2. Write the serialized data back into the tab according to the `CalendarFormat` layout.
+3. This may internally use a helper:
+
+   ```python
+   GoogleSheetsMaster.replaceDay(tab, day, DayShift)
+   ```
+
+---
+
+## **3. Calendar Format Rules**
+
+Each day’s schedule occupies a **10-row by 4-column grid** starting at **cell B6** in the spreadsheet.
+
+| Row | Col | Meaning                                                                                                    |
+| --- | --- | ---------------------------------------------------------------------------------------------------------- |
+| 0   | 0   | Day number (1–31)                                                                                          |
+| 1–9 | 0   | Shift start/end times and Tango assignment                                                                 |
+| 1–9 | 1–3 | Squad and territories, in the format `"squad\n[territories]"` (e.g., `"34\n[34,43]"` or `"34\n[No Crew]"`) |
+
+Additional layout details:
+
+* Each successive day continues downward from the previous by 10 rows.
+* A **month** is organized into **weeks**, each consisting of **7 days (Sunday–Saturday)**.
+* The total number of weeks varies by month (4–6 typical).
+* The grid layout repeats across these weekly rows, with each week continuing in 7-day columns.
+
+---
+
+## **4. New Class: `CalendarCommands`**
+
+**Purpose:**
+Process command requests (from a URL with query parameters) to modify the schedule in a spreadsheet.
+
+---
+
+### **Command Interface**
+
+Each command is represented as a URL-style query:
+
+```
+/?action=noCrew&date=20251110&shift_start=1800&shift_end=600&squad=42
+```
+
+**Supported actions:**
+
+* `addShift`
+* `noCrew`
+* `obliterateShift`
+
+**Common parameters:**
+
+* `date`: e.g. `20251110` (YYYYMMDD)
+* `shift_start`: e.g. `1800`
+* `shift_end`: e.g. `0600`
+* `squad`: e.g. `42`
+
+---
+
+### **Command Behavior**
+
+Each command:
+
+1. Determines the corresponding sheet tab (based on the month/year in the date).
+2. Calls `GoogleSheetsMaster.get_day(tab, day)` to load the current day’s schedule.
+3. Modifies the `DaySchedule` based on the command.
+4. Writes it back via `GoogleSheetsMaster.put_day(tab, day, DaySchedule)`.
+
+---
+
+### **Shift Logic**
+
+* Each day is divided into **hourly slots** from **0600 to 0600** (next day).
+* A shift spans 12 hours (either 0600–1800 or 1800–0600).
+* Shifts can be modified partially — changes may split existing shifts into multiple segments.
+
+---
+
+### **Command Semantics**
+
+#### **`noCrew`**
+
+* Removes a specified squad from duty for the given hours.
+* The squad’s territories are cleared (`[No Crew]`).
+* Tango is reassigned to the remaining active squad.
+
+**Example:**
+If squads 34 and 43 are active from 1800–0600 and `noCrew` is applied for 34 from 1900–2100:
+
+* Split into 3 parts:
+
+  * 1800–1900 → both squads 34/43
+  * 1900–2100 → 34 off-duty (`No Crew`), 43 covers all territories
+  * 2100–0600 → both squads 34/43 resume normal duties
+* Tango swaps from 34 → 43 during 34’s off-duty hours.
+
+---
+
+#### **`addShift`**
+
+* Adds a squad for the specified time window.
+* Adjusts territory assignments according to the **territory table**.
+* Updates Tango assignment as needed.
+
+---
+
+#### **`obliterateShift`**
+
+* Completely removes a squad’s shift (no `[No Crew]` entry, just removed).
+
+---
+
+### **Audit / Rollback**
+
+Each command:
+
+* Generates a unique `changeId`.
+* Saves the change in an audit log (stub for now).
+* Should later allow rollback by `changeId` to restore the previous state.
+
+---
+
+## **5. Implementation Approach**
+
+Two possible internal representations for processing:
+
+### **Option 1 — Hourly Grid**
+
+* Represent the day as a 24-hour grid (from 0600 to next-day 0600).
+* Each hour stores:
+
+  * Active squads
+  * Territories
+  * Tango assignment
+* Apply commands against this grid (adding/removing squads or updating territories).
+* After modifications, reconstruct continuous shift intervals and serialize back.
+
+### **Option 2 — Interval-Based**
+
+* Represent shifts as time intervals.
+* Insert, split, or merge intervals based on commands.
+* Recombine adjacent intervals when possible.
+
+Either representation should maintain Tango and territory consistency.
+
+---
+
+✅ **Deliverables**
+
+1. Refactored model file (`calendar_models.py`).
+2. Updated `GoogleSheetsMaster` class with:
+
+   * `get_day(tab, day)`
+   * `put_day(tab, day, DayShift)`
+3. New `CalendarCommands` class implementing `addShift`, `noCrew`, and `obliterateShift` commands.
+4. Audit mechanism (stub for now) to track changes by `changeId`.
+
+---
+
+Would you like me to format this next as a **developer-facing AI prompt** (ready for Copilot/ChatGPT Code Interpreter), including class skeletons and file layout hints?
