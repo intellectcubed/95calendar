@@ -44,11 +44,15 @@ Create a `.env` file in the project root with your configuration:
 cp .env.example .env
 ```
 
-Edit `.env` and set your Google Spreadsheet ID:
+Edit `.env` and set your configuration:
 
 ```
 SPREADSHEET_ID=your-spreadsheet-id-here
+SUPABASE_URL=your-supabase-url-here
+SUPABASE_KEY=your-supabase-anon-key-here
 ```
+
+**Note:** Supabase credentials are required for the change backup system. See [BACKUP_SYSTEM.md](BACKUP_SYSTEM.md) for details.
 
 ### 4. Google Sheets API Setup
 
@@ -386,3 +390,6 @@ The `live_test` mode is particularly useful for comprehensive testing as it uses
 - `*.json` - Generated schedule files
 - `*.txt` - Generated calendar text files
 - `*.csv` - Generated CSV files for Google Sheets
+
+## Documentation
+https://squidfunk.github.io/mkdocs-material/creating-your-site/

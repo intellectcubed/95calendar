@@ -687,6 +687,31 @@ class GoogleSheetsMaster:
                 }
             })
             
+            # Set cell (0,0) to white text (day number)
+            requests.append({
+                'repeatCell': {
+                    'range': {
+                        'sheetId': sheet_id,
+                        'startRowIndex': start_row - 1,  # First row (0-indexed)
+                        'endRowIndex': start_row,
+                        'startColumnIndex': start_col_num - 1,  # First column (0-indexed)
+                        'endColumnIndex': start_col_num
+                    },
+                    'cell': {
+                        'userEnteredFormat': {
+                            'textFormat': {
+                                'foregroundColor': {
+                                    'red': 1.0,
+                                    'green': 1.0,
+                                    'blue': 1.0
+                                }
+                            }
+                        }
+                    },
+                    'fields': 'userEnteredFormat.textFormat.foregroundColor'
+                }
+            })
+            
             # Then, apply red formatting to cells with [No Crew]
             for row_idx, row in enumerate(day_grid):
                 for col_idx, cell_value in enumerate(row):

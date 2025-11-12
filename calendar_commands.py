@@ -8,16 +8,17 @@ import os
 from datetime import datetime, time, timedelta
 from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
-import uuid
 from calendar_models import Squad, ShiftSegment, Shift, DaySchedule
 from google_sheets_master import GoogleSheetsMaster
+from change_backup_manager import ChangeBackupManager
+from schedule_formatter import ScheduleFormatter
 import calendar
 
 
 class CalendarCommands:
     """Processes calendar modification commands."""
     
-    def __init__(self, spreadsheet_id: str, credentials_path: str = 'credentials.json', testing: bool = False, live_test: bool = False):
+    def __init__(self, spreadsheet_id: str, credentials_path: str = 'credentials.json', testing: bool = False, live_test: bool = False, backup_ttl_days: int = 30):
         """
         Initialize CalendarCommands.
         
@@ -26,12 +27,20 @@ class CalendarCommands:
             credentials_path: Path to credentials file
             testing: If True, append " Testing" to tab names
             live_test: If True, use "Testing" tab formatted as January 2026
+            backup_ttl_days: Number of days to keep backups (default: 30)
         """
         self.spreadsheet_id = spreadsheet_id
         self.sheets_master = GoogleSheetsMaster(credentials_path, live_test=live_test)
-        self.audit_log = []  # Stub for audit tracking
+        self.formatter = ScheduleFormatter()
         self.testing = testing
         self.live_test = live_test
+        
+        # Only initialize backup manager if not in test mode
+        # This prevents unit tests from requiring Supabase credentials
+        if not live_test:
+            self.backup_manager = ChangeBackupManager(default_ttl_days=backup_ttl_days)
+        else:
+            self.backup_manager = None
     
     def execute_command(self, command_url: str) -> Dict:
         """
@@ -72,21 +81,25 @@ class CalendarCommands:
         shift_start = self._parse_time(shift_start_str) if shift_start_str else None
         shift_end = self._parse_time(shift_end_str) if shift_end_str else None
         
-        # Generate change ID
-        change_id = str(uuid.uuid4())
-        
         # Get current day schedule
         day_schedule = self.sheets_master.get_day(self.spreadsheet_id, tab_name, day)
         if not day_schedule:
             return {'success': False, 'error': 'Could not retrieve day schedule'}
         
-        # Store original state for audit
-        self.audit_log.append({
-            'changeId': change_id,
-            'action': action,
-            'date': date_str,
-            'original_state': day_schedule
-        })
+        # Save backup of original state before modification (skip in test mode)
+        backup_id = None
+        if not self.live_test:
+            original_grid = self.formatter.format_day(day_schedule)
+            description = f"{action} - Squad {squad_id}" if squad_id else action
+            if shift_start and shift_end:
+                description += f" ({shift_start.strftime('%H%M')}-{shift_end.strftime('%H%M')})"
+            
+            backup_id = self.backup_manager.save_grid(
+                day=date_str,
+                grid=original_grid,
+                description=description,
+                command=command_url
+            )
         
         # Execute the command
         if action == 'noCrew':
@@ -105,7 +118,7 @@ class CalendarCommands:
         
         return {
             'success': success,
-            'changeId': change_id,
+            'changeId': backup_id,
             'action': action,
             'date': date_str
         }
@@ -435,42 +448,168 @@ class CalendarCommands:
         
         return hourly_grid
     
-    def rollback(self, change_id: str) -> Dict:
+    def rollback(self, change_id: str, date_str: str) -> Dict:
         """
-        Rollback a change by changeId (stub for now).
+        Rollback a change by restoring from a backup snapshot.
         
         Args:
-            change_id: The change ID to rollback
+            change_id: The snapshot ID to restore
+            date_str: Date string in YYYYMMDD format
             
         Returns:
             Dictionary with result status
         """
-        # Find the change in audit log
-        for entry in self.audit_log:
-            if entry['changeId'] == change_id:
-                # Restore original state
-                original_state = entry['original_state']
-                date_str = entry['date']
-                
-                date_obj = datetime.strptime(date_str, '%Y%m%d')
-                day = date_obj.day
-                month = date_obj.month
-                year = date_obj.year
-                tab_name = f"{calendar.month_name[month]} {year}"
-                if self.testing:
-                    tab_name += " Testing"
-                
-                success = self.sheets_master.put_day(self.spreadsheet_id, tab_name, day, original_state)
-                
-                return {
-                    'success': success,
-                    'message': f'Rolled back change {change_id}'
-                }
+        if self.live_test or not self.backup_manager:
+            return {
+                'success': False,
+                'error': 'Rollback not available in test mode'
+            }
         
-        return {
-            'success': False,
-            'error': f'Change ID {change_id} not found'
-        }
+        try:
+            # Retrieve the backup grid
+            backup_grid = self.backup_manager.revert_to_snapshot(change_id)
+            
+            # Parse date
+            date_obj = datetime.strptime(date_str, '%Y%m%d')
+            day = date_obj.day
+            month = date_obj.month
+            year = date_obj.year
+            
+            # Determine tab name
+            tab_name = f"{calendar.month_name[month]} {year}"
+            if self.testing:
+                tab_name += " Testing"
+            
+            # Write the backup grid directly to the sheet
+            # We don't need to convert to DaySchedule and back - just write the grid
+            success = self._write_grid_to_sheet(self.spreadsheet_id, tab_name, day, backup_grid)
+            
+            return {
+                'success': success,
+                'message': f'Rolled back to snapshot {change_id}',
+                'changeId': change_id,
+                'date': date_str
+            }
+        except ValueError as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Rollback failed: {str(e)}'
+            }
+    
+    def list_backups(self, date_str: str) -> List[Dict]:
+        """
+        List all backup snapshots for a given date.
+        
+        Args:
+            date_str: Date string in YYYYMMDD format
+            
+        Returns:
+            List of snapshot dictionaries
+        """
+        if self.live_test or not self.backup_manager:
+            return []
+        return self.backup_manager.list_snapshots(date_str)
+    
+    def _write_grid_to_sheet(self, spreadsheet_id: str, tab_name: str, day: int, grid: List[List[str]]) -> bool:
+        """
+        Write a grid directly to a specific day in Google Sheets.
+        
+        Args:
+            spreadsheet_id: The ID of the Google Spreadsheet
+            tab_name: Name of the tab to write to
+            day: Day of month (1-31)
+            grid: 10x4 grid to write
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        from datetime import datetime
+        import calendar as cal
+        
+        try:
+            # Apply live_test override if enabled
+            actual_tab_name = self.sheets_master._get_tab_name(tab_name)
+            
+            # Calculate the grid position for this day
+            if self.live_test:
+                month = 1
+                year = 2026
+            else:
+                tab_parts = tab_name.split()
+                if len(tab_parts) >= 2:
+                    month_name = tab_parts[0]
+                    year = int(tab_parts[1])
+                    month = list(cal.month_name).index(month_name)
+                else:
+                    raise ValueError(f"Invalid tab name format: {tab_name}")
+            
+            date_obj = datetime(year, month, day)
+            weekday = date_obj.weekday()
+            day_of_week = (weekday + 1) % 7
+            
+            first_day_of_month = datetime(year, month, 1)
+            first_weekday = first_day_of_month.weekday()
+            first_day_of_week = (first_weekday + 1) % 7
+            
+            days_from_first = day - 1
+            week_number = (days_from_first + first_day_of_week) // 7
+            
+            start_row = 6 + (week_number * 10)
+            col_offset = day_of_week * 4
+            start_col_num = 2 + col_offset
+            
+            def col_num_to_letter(n):
+                result = ""
+                while n > 0:
+                    n -= 1
+                    result = chr(65 + (n % 26)) + result
+                    n //= 26
+                return result
+            
+            start_col = col_num_to_letter(start_col_num)
+            
+            # Update the spreadsheet with the grid
+            range_str = f"'{actual_tab_name}'!{start_col}{start_row}"
+            
+            body = {
+                'values': grid
+            }
+            
+            sheet = self.sheets_master.service.spreadsheets()
+            result = self.sheets_master._retry_with_backoff(
+                lambda: sheet.values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_str,
+                    valueInputOption='RAW',
+                    body=body
+                ).execute()
+            )
+            
+            print(f"Successfully restored day {day} in '{actual_tab_name}' ({result.get('updatedCells')} cells)")
+            
+            # Apply red text formatting to cells with [No Crew]
+            self.sheets_master._format_no_crew_cells(spreadsheet_id, actual_tab_name, start_row, start_col_num, grid)
+            
+            return True
+            
+        except Exception as err:
+            print(f"An error occurred: {err}")
+            return False
+    
+    def _grid_to_csv(self, grid: List[List[str]]) -> str:
+        """Helper to convert grid to CSV string."""
+        import csv
+        import io
+        output = io.StringIO()
+        writer = csv.writer(output)
+        for row in grid:
+            writer.writerow(row)
+        return output.getvalue()
 
 
 # Example usage

@@ -136,28 +136,78 @@ class ManualCalendarUpdater:
         self._print_result(result)
         return result
     
-    def rollback(self, change_id: str):
+    def revert(self, date: str, change_id: str = None):
         """
-        Rollback a previous change.
+        Revert a change by restoring from a backup snapshot.
+        If no change_id is provided, shows available backups for the date.
         
         Args:
-            change_id: The change ID to rollback
+            date: Date in YYYYMMDD format (e.g., "20260110")
+            change_id: Optional snapshot ID to restore. If None, lists available backups.
         
         Returns:
-            Result dictionary from rollback operation
+            Result dictionary from revert operation
         """
-        print(f"\nExecuting rollback:")
-        print(f"  Change ID: {change_id}")
+        if not change_id:
+            # List available backups for this date
+            print(f"\nAvailable backups for {self._format_date(date)}:")
+            backups = self.commands.list_backups(date)
+            
+            if not backups:
+                print("  No backups found for this date.")
+                return {'success': False, 'error': 'No backups found'}
+            
+            for i, backup in enumerate(backups, 1):
+                print(f"\n  {i}. Snapshot ID: {backup['id']}")
+                print(f"     Created: {backup['created_at']}")
+                print(f"     Description: {backup['description']}")
+                print(f"     Command: {backup['command']}")
+                print(f"     Expires: {backup['expires_at']}")
+            
+            print("\nTo revert to a snapshot, run:")
+            print(f"  python man_update_calendar.py revert --date {date} --change-id <snapshot-id>")
+            return {'success': True, 'message': 'Listed available backups'}
+        
+        # Revert to specific backup
+        print(f"\nReverting to snapshot:")
+        print(f"  Date: {self._format_date(date)}")
+        print(f"  Snapshot ID: {change_id}")
         
         if self.is_prod:
             confirm = input("\n⚠️  PRODUCTION MODE - Are you sure? (yes/no): ")
             if confirm.lower() != 'yes':
-                print("Rollback cancelled.")
+                print("Revert cancelled.")
                 return {'success': False, 'error': 'User cancelled'}
         
-        result = self.commands.rollback(change_id)
+        result = self.commands.rollback(change_id, date)
         self._print_result(result)
         return result
+    
+    def list_backups(self, date: str):
+        """
+        List all backup snapshots for a given date.
+        
+        Args:
+            date: Date in YYYYMMDD format (e.g., "20260110")
+        
+        Returns:
+            List of backup snapshots
+        """
+        print(f"\nBackups for {self._format_date(date)}:")
+        backups = self.commands.list_backups(date)
+        
+        if not backups:
+            print("  No backups found for this date.")
+            return []
+        
+        for i, backup in enumerate(backups, 1):
+            print(f"\n  {i}. Snapshot ID: {backup['id']}")
+            print(f"     Created: {backup['created_at']}")
+            print(f"     Description: {backup['description']}")
+            print(f"     Command: {backup['command']}")
+            print(f"     Expires: {backup['expires_at']}")
+        
+        return backups
     
     def _format_date(self, date_str: str) -> str:
         """Format date string for display."""
@@ -203,11 +253,17 @@ Examples:
   # Remove squad 54 completely from night shift (testing mode)
   python man_update_calendar.py obliterateShift --date 20260120 --start 1800 --end 0600 --squad 54
   
-  # Same as above but in PRODUCTION mode
-  python man_update_calendar.py noCrew --date 20260110 --start 1900 --end 2100 --squad 34 --prod
+  # Same as above but in PRODUCTION mode (--prod comes BEFORE the command)
+  python man_update_calendar.py --prod noCrew --date 20260110 --start 1900 --end 2100 --squad 34
   
-  # Rollback a change
-  python man_update_calendar.py rollback --change-id abc-123-def
+  # List available backups for a date
+  python man_update_calendar.py list-backups --date 20260110
+  
+  # Revert to a specific backup snapshot
+  python man_update_calendar.py revert --date 20260110 --change-id abc-123-def
+  
+  # List backups and choose one to revert (interactive)
+  python man_update_calendar.py revert --date 20260110
   
 Environment Variables:
   SPREADSHEET_ID - Required. The Google Spreadsheet ID to update.
@@ -259,11 +315,19 @@ Environment Variables:
     obliterate_parser.add_argument('--squad', type=int, required=True,
                                   help='Squad ID (34, 35, 42, 43, or 54)')
     
-    # rollback command
-    rollback_parser = subparsers.add_parser('rollback',
-                                           help='Rollback a previous change')
-    rollback_parser.add_argument('--change-id', required=True,
-                                help='Change ID to rollback')
+    # revert command
+    revert_parser = subparsers.add_parser('revert',
+                                          help='Revert to a previous backup snapshot')
+    revert_parser.add_argument('--date', required=True,
+                              help='Date in YYYYMMDD format (e.g., 20260110)')
+    revert_parser.add_argument('--change-id',
+                              help='Snapshot ID to restore (omit to list available backups)')
+    
+    # list-backups command
+    listbackups_parser = subparsers.add_parser('list-backups',
+                                               help='List all backup snapshots for a date')
+    listbackups_parser.add_argument('--date', required=True,
+                                   help='Date in YYYYMMDD format (e.g., 20260110)')
     
     args = parser.parse_args()
     
@@ -283,8 +347,10 @@ Environment Variables:
             result = updater.add_shift(args.date, args.start, args.end, args.squad)
         elif args.command == 'obliterateShift':
             result = updater.obliterate_shift(args.date, args.start, args.end, args.squad)
-        elif args.command == 'rollback':
-            result = updater.rollback(args.change_id)
+        elif args.command == 'revert':
+            result = updater.revert(args.date, args.change_id)
+        elif args.command == 'list-backups':
+            result = {'success': True, 'backups': updater.list_backups(args.date)}
         
         # Exit with appropriate code
         sys.exit(0 if result.get('success') else 1)

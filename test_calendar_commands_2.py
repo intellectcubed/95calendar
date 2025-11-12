@@ -4,17 +4,20 @@ Comprehensive Test Suite for CalendarCommands
 Based on TestCommandsSpec.txt - Tests all permutations of add/remove/obliterate operations
 """
 
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables FIRST, before any other imports
+# Use explicit path to ensure .env is found regardless of where pytest is run from
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
 import pytest
 from datetime import time
 from calendar_commands import CalendarCommands
 from calendar_models import Squad, ShiftSegment, Shift, DaySchedule
 from google_sheets_master import GoogleSheetsMaster
-
-import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Test configuration
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')

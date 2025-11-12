@@ -26,7 +26,7 @@ The project now uses environment variables to manage configuration, specifically
 ### SPREADSHEET_ID
 - **Required:** Yes
 - **Description:** The Google Spreadsheet ID for your calendar
-- **Example:** `1bhmLdyBU9-rYmzBj-C6GwMXZCe9fvdb_hKd62S19Pvs`
+- **Example:** `1123GTUB-rmttty-C7GwMXZCe9fvdb_hKd62S19Pvs`
 - **Used by:** All scripts that interact with Google Sheets
 
 ## Files Updated
