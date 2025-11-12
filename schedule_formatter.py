@@ -8,7 +8,7 @@ import csv
 from typing import List, Optional
 from datetime import time
 from io import StringIO
-from calendar_builder import DaySchedule, Shift, ShiftSegment, Squad
+from calendar_models import DaySchedule, Shift, ShiftSegment, Squad
 
 
 class ScheduleFormatter:
@@ -37,9 +37,26 @@ class ScheduleFormatter:
             day_number = date_parts[2].lstrip('0')  # Remove leading zeros
             grid[0][0] = day_number
         
+        # Sort shifts chronologically (day shifts first, then night shifts)
+        # Day shifts start at 06:00, night shifts start at 18:00
+        # For night shifts that span midnight, treat hours 0-5 as coming after 18-23
+        def shift_sort_key(shift):
+            hour = shift.start_time.hour
+            minute = shift.start_time.minute
+            
+            # Normalize hours for sorting: 6-23 stay as is, 0-5 become 24-29
+            if hour < 6:
+                normalized_hour = hour + 24
+            else:
+                normalized_hour = hour
+            
+            return (normalized_hour * 60 + minute)
+        
+        sorted_shifts = sorted(day_schedule.shifts, key=shift_sort_key)
+        
         # Process each shift (starting from row 1)
         row_idx = 1
-        for shift in day_schedule.shifts:
+        for shift in sorted_shifts:
             if row_idx >= self.ROWS_PER_DAY:
                 break  # No more rows available
             
@@ -81,12 +98,20 @@ class ScheduleFormatter:
             squad: Squad object
             
         Returns:
-            Formatted string like "43\n[34,43]" or "43\n[No Crew]"
+            Formatted string like "43\n[34,43]", "43\n[All]", or "43\n[No Crew]"
         """
         squad_id = str(squad.id)
         
-        if squad.territories and len(squad.territories) > 0:
-            territories_str = '[' + ','.join(str(t) for t in squad.territories) + ']'
+        # Check if squad is inactive (No Crew)
+        if not getattr(squad, 'active', True):
+            territories_str = '[No Crew]'
+        elif squad.territories and len(squad.territories) > 0:
+            # Check if this is all territories (34, 35, 42, 43, 54)
+            all_territories = sorted([34, 35, 42, 43, 54])
+            if sorted(squad.territories) == all_territories:
+                territories_str = '[All]'
+            else:
+                territories_str = '[' + ','.join(str(t) for t in squad.territories) + ']'
         else:
             territories_str = '[No Crew]'
         
@@ -255,7 +280,7 @@ class ScheduleFormatter:
     
     def _parse_squad(self, squad_str: str) -> Optional[Squad]:
         """
-        Parse squad string like "43\n[34,43]" or "43\n[No Crew]".
+        Parse squad string like "43\n[34,43]", "43\n[All]", or "43\n[No Crew]".
         
         Args:
             squad_str: Formatted squad string
@@ -272,13 +297,24 @@ class ScheduleFormatter:
             territories_str = parts[1].strip()
             
             territories = []
-            if territories_str != '[No Crew]':
+            active = True
+            
+            if territories_str == '[No Crew]':
+                # Inactive squad
+                territories = []
+                active = False
+            elif territories_str == '[All]':
+                # All territories
+                territories = [34, 35, 42, 43, 54]
+                active = True
+            else:
                 # Parse territories like "[34,43]"
                 territories_str = territories_str.strip('[]')
                 if territories_str:
                     territories = [int(t.strip()) for t in territories_str.split(',')]
+                active = True
             
-            return Squad(id=squad_id, territories=territories)
+            return Squad(id=squad_id, territories=territories, active=active)
         except (ValueError, IndexError):
             return None
 

@@ -7,45 +7,13 @@ Reads a CSV template and generates monthly schedules for rescue squad shifts.
 import csv
 import json
 import argparse
-from dataclasses import dataclass, field, asdict
+import os
+from dataclasses import asdict
 from datetime import time, date, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict
 import calendar
 from google_sheets_master import GoogleSheetsMaster
-
-
-@dataclass
-class Squad:
-    id: int
-    territories: List[int] = field(default_factory=list)
-
-
-@dataclass
-class ShiftSegment:
-    start_time: time
-    end_time: time
-    squads: List[Squad]
-
-
-@dataclass
-class Shift:
-    name: str
-    start_time: time
-    end_time: time
-    segments: List[ShiftSegment] = field(default_factory=list)
-    tango: Optional[int] = None
-
-
-@dataclass
-class DaySchedule:
-    day: str
-    shifts: List[Shift] = field(default_factory=list)
-
-
-@dataclass
-class WeekSchedule:
-    week_number: int
-    days: List[DaySchedule] = field(default_factory=list)
+from calendar_models import Squad, ShiftSegment, Shift, DaySchedule, WeekSchedule
 
 
 def parse_time(time_str: str) -> time:
@@ -299,9 +267,17 @@ def assign_territories(schedule: List[DaySchedule]) -> None:
         schedule: List of DaySchedule objects to update with territory assignments
     """
     # Initialize GoogleSheetsMaster and read territory assignments
+    from dotenv import load_dotenv
+    load_dotenv()
+    
     sheets_master = GoogleSheetsMaster('credentials.json')
-    spreadsheet_id = '1bhmLdyBU9-rYmzBj-C6GwMXZCe9fvdb_hKd62S19Pvs'
+    spreadsheet_id = os.getenv('SPREADSHEET_ID')
+    if not spreadsheet_id:
+        raise ValueError("SPREADSHEET_ID not found in environment variables")
     territory_map = sheets_master.read_territories(spreadsheet_id)
+    
+    # Define all territories (based on squad IDs: 34, 35, 42, 43, 54)
+    ALL_TERRITORIES = [34, 35, 42, 43, 54]
     
     # Iterate over the schedule
     for day_schedule in schedule:
@@ -309,19 +285,29 @@ def assign_territories(schedule: List[DaySchedule]) -> None:
             for segment in shift.segments:
                 # Create key by sorting squad IDs and joining with comma
                 squad_ids = sorted([squad.id for squad in segment.squads])
-                key = ','.join(str(sid) for sid in squad_ids)
                 
-                # Look up territory assignments for this squad combination
-                if key in territory_map:
-                    territory_assignments = territory_map[key]
-                    
-                    # Assign territories to each squad
+                # Special case: single squad on duty covers all territories
+                if len(squad_ids) == 1:
                     for squad in segment.squads:
-                        # Find the matching territory assignment for this squad
-                        for assignment in territory_assignments:
-                            if assignment.squad == squad.id:
-                                squad.territories = assignment.territories
-                                break
+                        squad.territories = ALL_TERRITORIES.copy()
+                else:
+                    # Multiple squads: look up territory assignments
+                    key = ','.join(str(sid) for sid in squad_ids)
+                    
+                    # Look up territory assignments for this squad combination
+                    if key in territory_map:
+                        territory_assignments = territory_map[key]
+                        
+                        # Assign territories to each squad
+                        for squad in segment.squads:
+                            # Find the matching territory assignment for this squad
+                            for assignment in territory_assignments:
+                                if assignment.squad == squad.id:
+                                    squad.territories = assignment.territories
+                                    break
+                    else:
+                        # No mapping found - leave territories empty
+                        print(f"Warning: No territory mapping found for key '{key}'")
 
 
 def calculate_shift_hours(start_time: time, end_time: time) -> float:
@@ -484,10 +470,14 @@ def main():
                        help='Populate Google Calendar with the schedule')
     parser.add_argument('--google-calendar-tab', 
                        help='Name of the Google Sheets tab to populate (default: "Month Year")')
-    parser.add_argument('--spreadsheet-id', default='1bhmLdyBU9-rYmzBj-C6GwMXZCe9fvdb_hKd62S19Pvs',
-                       help='Google Spreadsheet ID')
+    parser.add_argument('--spreadsheet-id',
+                       help='Google Spreadsheet ID (default: from SPREADSHEET_ID env var)')
     
     args = parser.parse_args()
+    
+    # Load environment variables
+    from dotenv import load_dotenv
+    load_dotenv()
     
     try:
         print(f"Loading template from {args.csv}...")
@@ -527,13 +517,18 @@ def main():
             print("Populating Google Calendar...")
             sheets_master = GoogleSheetsMaster('credentials.json')
             
+            # Get spreadsheet_id from args or environment
+            spreadsheet_id = args.spreadsheet_id or os.getenv('SPREADSHEET_ID')
+            if not spreadsheet_id:
+                raise ValueError("SPREADSHEET_ID must be provided via --spreadsheet-id or SPREADSHEET_ID environment variable")
+            
             # Use provided tab name or generate default
             tab_name = args.google_calendar_tab
             if not tab_name:
                 tab_name = f"{calendar.month_name[args.month]} {args.year}"
             
             success = sheets_master.populate_calendar(
-                spreadsheet_id=args.spreadsheet_id,
+                spreadsheet_id=spreadsheet_id,
                 schedule=schedule,
                 tab_name=tab_name,
                 month=args.month,

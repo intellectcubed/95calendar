@@ -1,0 +1,181 @@
+
+
+```text
+# Prompt: Generate Python Code for Rescue Squad Shift Scheduler
+
+## Task
+Write a Python script that reads a CSV file containing a calendar template for rescue squad scheduling, and outputs a structured Python representation of the schedule using data classes.
+
+---
+
+## CSV Input Description
+- The CSV file path is `/Users/george.nowakowski/Downloads/station95template.csv`.
+- The file represents a 4–5 week calendar template.
+- **Column 1:** Week number (`Week1` through `Week5`).
+- For each **day of the week (Sunday–Saturday)**, there are **two columns**:
+  - The first column is the **shift range**, for example `"1800 - 0600"` or `"0600 - 1800"`.
+  - The next column contains the **squads on duty**, formatted as `squad|squad` (example: `"34|54"`).
+- Example header layout:
+```
+
+Week | Sun Shift | Sun Squads | Mon Shift | Mon Squads | Tue Shift | Tue Squads | ... | Sat Shift | Sat Squads
+
+````
+
+---
+
+## Domain Information
+- Squads: **34, 35, 42, 43, 54**
+- Typical shift patterns:
+- **Weekends:** `0600–1800` and `1800–0600`
+- **Weekdays:** `1800–0600`
+- **Exceptions:** Mondays can be split into two segments:
+  - `1800–0000` (segment 1)
+  - `0000–0600` (segment 2)
+- Squads on duty are listed as `squad|squad` (sometimes one squad, sometimes two).
+
+---
+
+## Data Model Requirements
+Implement the following Python `dataclasses` to represent the schedule data structure:
+
+```python
+from dataclasses import dataclass, field
+from datetime import time
+from typing import List
+
+@dataclass
+class Squad:
+  id: int
+  territories: List[int]
+
+@dataclass
+class ShiftSegment:
+  start_time: time
+  end_time: time
+  squads: List[Squad]
+
+@dataclass
+class Shift:
+  name: str
+  start_time: time
+  end_time: time
+  segments: List[ShiftSegment] = field(default_factory=list)
+
+@dataclass
+class DaySchedule:
+  day: str
+  shifts: List[Shift] = field(default_factory=list)
+````
+
+---
+
+## Program Requirements
+
+1. **Parse the template CSV** and load it into Python objects using the above data model.
+2. **Store each week’s data** (Week1–Week5) as a reusable schedule pattern.
+3. **Generate full month schedules dynamically**:
+
+   * The input will be a **month and year** (e.g., `October 2025`).
+   * January starts with **Week1**.
+   * Each subsequent week increments (Week2, Week3, etc.), and after Week4 or Week5, cycles back to Week1.
+   * Example:
+
+     * January → Weeks 1–4
+     * February → starts from Week2 (rolling forward continuously)
+   * Continue this pattern for each month until the target month and year.
+4. **Output** a data object (or JSON) representing the full schedule for the requested month and year.
+5. Include a function to serialize the resulting schedule to JSON for inspection.
+
+---
+
+## Expected Function Signatures
+
+```python
+def load_template(csv_path: str):
+    """Parse the CSV into data objects representing the template weeks."""
+
+def generate_month_schedule(template_weeks, target_month: int, target_year: int):
+    """Using the template, generate the schedule for the given month and year."""
+```
+
+---
+
+## Example Usage
+
+```python
+template = load_template("/Users/george.nowakowski/Downloads/station95template.csv")
+schedule = generate_month_schedule(template, 10, 2025)
+```
+
+The script should generate a Python object or JSON structure showing which squads cover each day and shift segment in **October 2025**, based on the rolling weekly template starting from January Week1.
+
+---
+
+## Example Output (JSON)
+
+```json
+{
+  "day": "Monday",
+  "shifts": [
+    {
+      "name": "Night Shift",
+      "start_time": "18:00:00",
+      "end_time": "06:00:00",
+      "segments": [
+        {
+          "start_time": "18:00:00",
+          "end_time": "00:00:00",
+          "squads": [{"id": 43, "territories": [34, 43]}]
+        },
+        {
+          "start_time": "00:00:00",
+          "end_time": "06:00:00",
+          "squads": [
+            {"id": 43, "territories": [34, 43]},
+            {"id": 54, "territories": [54, 42, 35]}
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Implementation Details
+
+* Use `datetime.time` objects to represent times internally.
+* Handle times that span midnight (e.g., `1800–0600`).
+* Handle days with multiple segments (e.g., Monday split shifts).
+* Use Python’s built-in `csv` module or `pandas` for CSV parsing.
+* Use `dataclasses.asdict()` + `json.dumps(..., indent=2)` for output serialization.
+* Optionally, add command-line arguments (`argparse`) to specify:
+
+  * CSV path
+  * Target month
+  * Target year
+* Optionally, add simple logging to indicate which template week is used for each calendar week.
+
+---
+
+## Deliverables
+
+Produce a single self-contained Python script that:
+
+1. Defines the data model.
+2. Reads and parses the CSV template.
+3. Generates a full monthly schedule from the rolling weekly template.
+4. Prints or saves the final schedule in JSON format.
+
+---
+
+**Goal:** When the user runs the script for `October 2025`, the output correctly represents all days and shifts using the 4–5 week repeating template from the CSV.
+
+```
+
+---
+
+Would you like me to append a **sample CSV header and row** (so the AI has an example to base parsing logic on)? That can make the code it generates much more accurate.
+```

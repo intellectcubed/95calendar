@@ -1,0 +1,157 @@
+Perfect — your project description is clear and detailed. I’ve cleaned and structured it so that another AI (or a developer) can use it as a **specification document** for generating `test_calendar_commands.py`.
+
+Below is a refined version of your requirements **plus** a well-structured set of **initial squad setups and test cases** that comprehensively cover all permutations of add/remove/obliterate operations.
+
+---
+
+# **Specification: test_calendar_commands.py**
+
+## **Project Context**
+
+This test suite validates the functionality of the `CalendarCommands` class, which issues EMS calendar commands that modify shift data stored in a Google Sheets-based schedule.
+
+The EMS calendar models daily schedules for squads on duty, including:
+
+* **Squads:** 34, 35, 42, 43, 54
+* **Shifts:**
+
+  * **Weekdays (Mon–Fri):** 1800–0600 (overnight)
+  * **Weekends (Sat–Sun):** 0600–1800 and 1800–0600
+* **Territories:**
+  Each squad covers its own territory and may share others based on who is on duty (defined in the `TerritoryAssignment` class).
+* **Tango:**
+  One squad per shift acts as the Tango (supervisor).
+
+Shifts may be **split into smaller increments** (as small as 1 hour) when partial modifications are applied. For example, if squad 34 is unavailable for two hours in a 12-hour shift, the day is divided into three segments:
+
+```
+1800–1900  normal (34 + 43)
+1900–2100  34 No Crew, 43 covers all
+2100–0600  normal (34 + 43)
+```
+
+---
+
+## **System Under Test**
+
+### **Classes**
+
+* **GoogleSheetsMaster**
+  Reads/writes Google Sheets data.
+* **TerritoryAssignment**
+  Determines how territories are divided among active squads.
+* **ScheduleFormatter**
+  Serializes/deserializes shift data to/from CSV for Google Sheets.
+* **CalendarCommands**
+  Handles modification commands:
+
+  * `addShift()`: adds a squad for a given duration.
+  * `noCrew()`: marks a squad as “No Crew” during a duration (still listed, but with no territories).
+  * `obliterateShift()`: completely removes a squad from the shift.
+
+---
+
+## **1. Starting Calendar Setup**
+
+The following **initial squad assignments** will be preloaded into the test calendar before running tests. Each represents a baseline scenario from which commands will be tested.
+
+| Day    | Configuration | Description                                                      |
+| ------ | ------------- | ---------------------------------------------------------------- |
+| Jan 1  | 34 + 43       | Standard 2-squad shift, 43 is Tango                              |
+| Jan 2  | 34 + 35       | Two squads from different districts                              |
+| Jan 3  | 34 + 35 + 43  | Three squads on duty                                             |
+| Jan 4  | 42 only       | Single-squad shift                                               |
+| Jan 5  | 34 + 42       | Two squads, 34 is Tango                                          |
+| Jan 6  | 43 only       | Weekend single-squad morning shift                               |
+| Jan 7  | 34 + 43       | Weekend night shift                                              |
+| Jan 8  | 34 + 43       | Standard weekday shift (repeat baseline for multiple operations) |
+| Jan 9  | 35 + 42       | Cross-territory coverage                                         |
+| Jan 10 | 34 + 35 + 42  | Three-squad configuration with multiple overlaps                 |
+
+These starting configurations will populate the in-memory calendar (mocked `GoogleSheetsMaster` or test stub).
+
+---
+
+## **2. Test Case Design**
+
+Each test will:
+
+1. Load the initial day’s schedule.
+2. Execute a `CalendarCommands` operation (`addShift`, `noCrew`, `obliterateShift`).
+3. Validate:
+
+   * Resulting squad composition.
+   * Territory assignment redistribution.
+   * Tango reassignment.
+   * Shift segmenting behavior (splitting into sub-shifts as needed).
+   * Output format (via `ScheduleFormatter`).
+
+---
+
+## **3. Core Test Cases**
+
+| Test ID  | Day    | Action                          | Description                               | Expected Outcome                                                                                                                              |
+| -------- | ------ | ------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TC01** | Jan 1  | `noCrew(squad=34, 1900–2100)`   | Remove squad 34 for part of the shift     | Shift splits into 3 segments (before, during, after). 34 marked “No Crew” in middle; 43 covers all territories and becomes Tango temporarily. |
+| **TC02** | Jan 2  | `noCrew(squad=35, full shift)`  | Remove one squad for full shift           | 35 marked “No Crew” entire shift; 34 covers all territories; 34 remains Tango.                                                                |
+| **TC03** | Jan 3  | `obliterateShift(squad=35)`     | Remove one of three squads entirely       | Only 34 and 43 remain; territories redistributed; 43 retains Tango.                                                                           |
+| **TC04** | Jan 3  | `noCrew(squad=43, 0000–0300)`   | Temporarily remove Tango                  | 43 loses Tango role for 3 hrs; 34 becomes Tango; 43 returns to normal after 0300.                                                             |
+| **TC05** | Jan 4  | `addShift(squad=43, 1800–0600)` | Add a second squad to single-squad day    | 42 and 43 now on shift; territories assigned according to 2-squad rules; 43 becomes Tango.                                                    |
+| **TC06** | Jan 5  | `noCrew(squad=34, 2200–0600)`   | Remove the Tango for part of shift        | 42 becomes Tango; 34 marked No Crew for remaining hours.                                                                                      |
+| **TC07** | Jan 6  | `addShift(squad=34, 0600–1800)` | Add a squad to weekend daytime shift      | Shifts now have two squads; territories rebalanced; 43 remains Tango.                                                                         |
+| **TC08** | Jan 7  | `obliterateShift(squad=43)`     | Completely remove squad 43                | 34 only remains on shift; 34 gets all territories and Tango role.                                                                             |
+| **TC09** | Jan 8  | `addShift(squad=35, 2000–0000)` | Add partial-shift squad                   | Splits original 1800–0600 shift into segments; 35 active only during partial window; territories adjusted dynamically.                        |
+| **TC10** | Jan 8  | `noCrew(squad=34, 2000–0000)`   | Remove one squad for overlapping duration | Verifies combined effect on previously added shift; 35 temporarily takes over Tango.                                                          |
+| **TC11** | Jan 9  | `obliterateShift(squad=35)`     | Remove first squad entirely               | 42 remains on duty, covers all territories.                                                                                                   |
+| **TC12** | Jan 10 | `addShift(squad=54, 1800–0600)` | Add a third squad                         | Validates territory table for 3-squad + 1 addition; correct Tango reassignment.                                                               |
+
+---
+
+## **4. Additional Edge Case Tests**
+
+| Test ID  | Day    | Action                                     | Description                                        | Expected Outcome                                                  |
+| -------- | ------ | ------------------------------------------ | -------------------------------------------------- | ----------------------------------------------------------------- |
+| **TC13** | Jan 1  | `noCrew(squad=34, 1800–0600)`              | Entire shift marked as “No Crew”                   | Ensures full-shift No Crew is handled correctly.                  |
+| **TC14** | Jan 2  | `obliterateShift(squad=34)`                | Remove all squads from shift                       | Validates empty shift handling (calendar should still show date). |
+| **TC15** | Jan 3  | `addShift(squad=42, overlapping existing)` | Add squad already present during overlapping hours | Should merge without duplication.                                 |
+| **TC16** | Jan 4  | `addShift(squad=35, 0500–0700)`            | Add partial shift crossing day boundary            | Verifies cross-day split (0600 reset logic).                      |
+| **TC17** | Jan 8  | `noCrew(squad=43, 1759–1801)`              | Edge timing overlap                                | Should properly round times to hourly slots and split correctly.  |
+| **TC18** | Jan 10 | `obliterateShift(squad=54)`                | Remove a newly added squad                         | Ensures rollback to previous 3-squad configuration.               |
+
+---
+
+## **5. Setup and Teardown**
+
+**Setup:**
+
+* Initialize mock or in-memory `GoogleSheetsMaster` with test calendar structure.
+* Populate initial squad configurations from section 1.
+* Load predefined `TerritoryAssignment` table.
+* Stub `ScheduleFormatter` for CSV conversions (in-memory).
+
+**Teardown:**
+
+* Clear test calendar and reset state.
+* Verify all `CalendarCommands` operations are idempotent and reversible.
+
+---
+
+## **6. Expected AI Code Generation Output**
+
+The generation AI should:
+
+1. Create `test_calendar_commands.py` under `/tests/`.
+2. Implement tests using `pytest`.
+3. Use fixtures for `GoogleSheetsMaster`, `CalendarCommands`, and mock day data.
+4. Include assertions for:
+
+   * Squad count before/after modification
+   * Territory list correctness
+   * Tango reassignment
+   * Number of shift splits
+   * Serialized CSV output content
+
+---
+
+Would you like me to now format this into a **ready-to-feed developer prompt** (so another AI can directly generate the code structure for `test_calendar_commands.py`)?
+It would include file structure, imports, fixture definitions, and stub function signatures for each test case.

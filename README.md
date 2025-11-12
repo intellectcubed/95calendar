@@ -36,7 +36,21 @@ pip install -r requirements.txt
 
 This installs the Google Sheets API client libraries needed for the GoogleSheetsMaster class.
 
-### 3. Google Sheets API Setup
+### 3. Environment Variables
+
+Create a `.env` file in the project root with your configuration:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set your Google Spreadsheet ID:
+
+```
+SPREADSHEET_ID=your-spreadsheet-id-here
+```
+
+### 4. Google Sheets API Setup
 
 The `GoogleSheetsMaster` class uses service account authentication:
 
@@ -46,7 +60,7 @@ The `GoogleSheetsMaster` class uses service account authentication:
    - Give "Viewer" or "Editor" access depending on your needs
 3. No user authorization required - service accounts authenticate automatically
 
-### 4. CSV Template Format
+### 5. CSV Template Format
 
 The CSV template should be located at `/Users/george.nowakowski/Downloads/station95template.csv` (or specify a custom path).
 
@@ -83,7 +97,7 @@ python calendar_builder.py --csv /path/to/template.csv --month 11 --year 2025
 - `--output` - Output JSON file path (optional, prints to console if not specified)
 - `--populate-google-calendar` - Populate Google Sheets calendar template with the schedule
 - `--google-calendar-tab` - Name of the Google Sheets tab to populate (default: "Month Year")
-- `--spreadsheet-id` - Google Spreadsheet ID (default: 1bhmLdyBU9-rYmzBj-C6GwMXZCe9fvdb_hKd62S19Pvs)
+- `--spreadsheet-id` - Google Spreadsheet ID (default: from SPREADSHEET_ID env var)
 
 ### Displaying a Calendar
 
@@ -187,6 +201,7 @@ python calendar_builder.py --month 11 --year 2025 --populate-google-calendar --s
 3. Formats all days using `ScheduleFormatter`
 4. Organizes days into weeks (Sunday-Saturday)
 5. Updates the entire calendar in a single API call starting at B6
+6. Applies red text formatting to any cells containing "[No Crew]"
 
 ## GoogleSheetsMaster Class
 
@@ -244,8 +259,10 @@ Each day occupies a **10 rows × 4 columns** grid:
   - Format: `HHMM - HHMM\n(Tango: XX)`
   - Example: `0600 - 1800\n(Tango: 54)`
 - **Column 1-3**: Squads (sorted by ID)
-  - Format: `ID\n[territories]` or `ID\n[No Crew]`
-  - Example: `43\n[34,43]` or `43\n[No Crew]`
+  - Format: `ID\n[territories]`, `ID\n[All]`, or `ID\n[No Crew]`
+  - Example: `43\n[34,43]` (specific territories)
+  - Example: `43\n[All]` (single squad covers all territories)
+  - Example: `43\n[No Crew]` (squad off duty - displayed in red text)
 
 ### Usage Example
 
@@ -279,12 +296,87 @@ day_schedule = formatter.deserialize_from_csv(day_csv, "Monday 2025-11-03")
 - `serialize_month_to_csv(schedule)` - Convert full month to CSV (days side-by-side)
 - `deserialize_from_csv(csv_data, day_name)` - Parse CSV back to DaySchedule
 
+## CalendarCommands Class
+
+The `CalendarCommands` class provides command-based modification of schedules in Google Sheets.
+
+### Initialization
+
+```python
+from calendar_commands import CalendarCommands
+
+# Production mode - uses actual month tabs (e.g., "January 2026")
+commands = CalendarCommands('your-spreadsheet-id')
+
+# Testing mode - appends " Testing" to tab names (e.g., "January 2026 Testing")
+commands = CalendarCommands('your-spreadsheet-id', testing=True)
+```
+
+### Supported Commands
+
+**noCrew** - Remove a squad from duty for specified hours, marking territories as [No Crew]
+```python
+result = commands.execute_command(
+    '/?action=noCrew&date=20260110&shift_start=1900&shift_end=2100&squad=34'
+)
+```
+
+**addShift** - Add a squad for specified time window
+```python
+result = commands.execute_command(
+    '/?action=addShift&date=20260115&shift_start=0600&shift_end=1800&squad=42'
+)
+```
+
+**obliterateShift** - Completely remove a squad's shift
+```python
+result = commands.execute_command(
+    '/?action=obliterateShift&date=20260120&shift_start=1800&shift_end=0600&squad=54'
+)
+```
+
+### Rollback
+
+Each command generates a unique `changeId` that can be used to rollback changes:
+
+```python
+result = commands.execute_command('/?action=noCrew&date=20260110&shift_start=1900&shift_end=2100&squad=34')
+change_id = result['changeId']
+
+# Rollback the change
+commands.rollback(change_id)
+```
+
+### Testing Modes
+
+**testing=True** - Appends " Testing" to tab names
+```python
+commands = CalendarCommands(spreadsheet_id, testing=True)
+# Uses "January 2026 Testing" tab
+```
+
+**live_test=True** - Uses "Testing" tab formatted as January 2026
+```python
+commands = CalendarCommands(spreadsheet_id, live_test=True)
+# All operations use "Testing" tab
+# Calendar is formatted as January 2026 (starts Thursday, first day at R6)
+```
+
+Both modes allow you to:
+- Test commands without affecting production data
+- Run automated tests safely
+- Verify behavior before applying to actual schedules
+
+The `live_test` mode is particularly useful for comprehensive testing as it uses a single dedicated "Testing" tab that's always formatted as January 2026, regardless of the actual date being tested.
+
 ## Files
 
 - `calendar_builder.py` - Schedule generator with territory and tango assignment
 - `calendar_printer.py` - Calendar formatter for text display
 - `schedule_formatter.py` - Google Sheets CSV formatter
 - `google_sheets_master.py` - Google Sheets integration class
+- `calendar_commands.py` - Command-based schedule modification
+- `calendar_models.py` - Data model definitions
 - `README.md` - This file
 - `requirements.txt` - Python package dependencies
 - `credentials.json` - Google API service account credentials

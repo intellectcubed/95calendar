@@ -30,16 +30,18 @@ class TerritoryAssignment:
 class GoogleSheetsMaster:
     """Manages Google Sheets operations for rescue squad scheduling."""
     
-    def __init__(self, credentials_path: str = 'credentials.json'):
+    def __init__(self, credentials_path: str = 'credentials.json', live_test: bool = False):
         """
         Initialize GoogleSheetsMaster with credentials.
         
         Args:
             credentials_path: Path to the Google API credentials JSON file
+            live_test: If True, use "Testing" tab formatted as January 2026
         """
         self.credentials_path = credentials_path
         self.creds = None
         self.service = None
+        self.live_test = live_test
         self._authenticate()
     
     def _authenticate(self):
@@ -61,6 +63,20 @@ class GoogleSheetsMaster:
         
         # Build the service
         self.service = build('sheets', 'v4', credentials=self.creds)
+    
+    def _get_tab_name(self, tab_name: str) -> str:
+        """
+        Get the actual tab name to use, considering live_test mode.
+        
+        Args:
+            tab_name: The requested tab name (e.g., "January 2026")
+            
+        Returns:
+            "Testing" if live_test is True, otherwise the original tab_name
+        """
+        if self.live_test:
+            return "Testing"
+        return tab_name
     
     def read_territories(self, spreadsheet_id: str) -> Dict[str, List[TerritoryAssignment]]:
         """
@@ -193,11 +209,14 @@ class GoogleSheetsMaster:
             else:
                 raise ValueError("Either tab_name or both month and year must be provided")
         
+        # Apply live_test override if enabled
+        actual_tab_name = self._get_tab_name(tab_name)
+        
         try:
             sheet = self.service.spreadsheets()
             
             # Check if cell A100 contains "editable"
-            check_range = f"'{tab_name}'!A100"
+            check_range = f"'{actual_tab_name}'!A100"
             check_result = sheet.values().get(
                 spreadsheetId=spreadsheet_id,
                 range=check_range
@@ -276,7 +295,7 @@ class GoogleSheetsMaster:
                 all_data.extend(week_rows)
             
             # Update the spreadsheet starting at B6
-            update_range = f"'{tab_name}'!B6"
+            update_range = f"'{actual_tab_name}'!B6"
             
             body = {
                 'values': all_data
@@ -289,12 +308,396 @@ class GoogleSheetsMaster:
                 body=body
             ).execute()
             
-            print(f"Successfully updated {result.get('updatedCells')} cells in '{tab_name}'")
+            print(f"Successfully updated {result.get('updatedCells')} cells in '{actual_tab_name}'")
+            
+            # Apply red text formatting to all cells with [No Crew]
+            self._format_no_crew_in_range(spreadsheet_id, actual_tab_name, all_data, 6, 2)  # Start at row 6, column B (2)
+            
             return True
             
         except HttpError as err:
             print(f"An error occurred: {err}")
             return False
+    
+    def _format_no_crew_in_range(self, spreadsheet_id: str, tab_name: str, data_grid: list, start_row: int, start_col_num: int):
+        """
+        Apply red text formatting to all cells containing [No Crew] in a data range.
+        
+        Args:
+            spreadsheet_id: The ID of the Google Spreadsheet
+            tab_name: Name of the tab
+            data_grid: The full data grid
+            start_row: Starting row number (1-indexed)
+            start_col_num: Starting column number (1-indexed, A=1, B=2, etc.)
+        """
+        try:
+            # Find all cells with [No Crew]
+            requests = []
+            
+            for row_idx, row in enumerate(data_grid):
+                for col_idx, cell_value in enumerate(row):
+                    if '[No Crew]' in str(cell_value):
+                        # Calculate actual row and column in sheet
+                        sheet_row = start_row + row_idx - 1  # Convert to 0-indexed
+                        sheet_col = start_col_num + col_idx - 1  # Convert to 0-indexed
+                        
+                        # Create format request for red text
+                        requests.append({
+                            'repeatCell': {
+                                'range': {
+                                    'sheetId': self._get_sheet_id(spreadsheet_id, tab_name),
+                                    'startRowIndex': sheet_row,
+                                    'endRowIndex': sheet_row + 1,
+                                    'startColumnIndex': sheet_col,
+                                    'endColumnIndex': sheet_col + 1
+                                },
+                                'cell': {
+                                    'userEnteredFormat': {
+                                        'textFormat': {
+                                            'foregroundColor': {
+                                                'red': 1.0,
+                                                'green': 0.0,
+                                                'blue': 0.0
+                                            }
+                                        }
+                                    }
+                                },
+                                'fields': 'userEnteredFormat.textFormat.foregroundColor'
+                            }
+                        })
+            
+            # Apply formatting if there are any requests
+            if requests:
+                body = {
+                    'requests': requests
+                }
+                
+                self.service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body=body
+                ).execute()
+                
+                print(f"Applied red formatting to {len(requests)} cells with [No Crew]")
+        
+        except HttpError as err:
+            print(f"Warning: Could not apply formatting: {err}")
+    
+    def get_day(self, spreadsheet_id: str, tab_name: str, day: int):
+        """
+        Retrieve a specific day's schedule from a Google Sheets tab.
+        
+        Args:
+            spreadsheet_id: The ID of the Google Spreadsheet
+            tab_name: Name of the tab to read from
+            day: Day of month (1-31)
+            
+        Returns:
+            DaySchedule object for the specified day
+        """
+        from schedule_formatter import ScheduleFormatter
+        from datetime import datetime
+        import calendar as cal
+        
+        try:
+            # Apply live_test override if enabled
+            actual_tab_name = self._get_tab_name(tab_name)
+            
+            # Calculate the grid position for this day
+            # Need to determine which week and day of week this day falls on
+            # If live_test mode, use January 2026 for calculations
+            if self.live_test:
+                month = 1
+                year = 2026
+            else:
+                # Parse tab name to get month and year (format: "Month Year")
+                tab_parts = tab_name.split()
+                if len(tab_parts) >= 2:
+                    month_name = tab_parts[0]
+                    year = int(tab_parts[1])
+                    month = list(cal.month_name).index(month_name)
+                else:
+                    raise ValueError(f"Invalid tab name format: {tab_name}")
+            
+            # Create date object for this day
+            date_obj = datetime(year, month, day)
+            
+            # Calculate week and day of week
+            weekday = date_obj.weekday()
+            day_of_week = (weekday + 1) % 7  # Convert to Sunday=0
+            
+            first_day_of_month = datetime(year, month, 1)
+            first_weekday = first_day_of_month.weekday()
+            first_day_of_week = (first_weekday + 1) % 7
+            
+            days_from_first = day - 1
+            week_number = (days_from_first + first_day_of_week) // 7
+            
+            # Calculate cell range
+            # Starting row: 6 + (week_number * 10)
+            # Starting column: B + (day_of_week * 4)
+            start_row = 6 + (week_number * 10)
+            end_row = start_row + 9  # 10 rows total
+            
+            # Column calculation (B=1, F=5, J=9, N=13, R=17, V=21, Z=25)
+            col_offset = day_of_week * 4
+            start_col_num = 2 + col_offset  # B=2
+            end_col_num = start_col_num + 3  # 4 columns total
+            
+            # Convert column numbers to letters
+            def col_num_to_letter(n):
+                result = ""
+                while n > 0:
+                    n -= 1
+                    result = chr(65 + (n % 26)) + result
+                    n //= 26
+                return result
+            
+            start_col = col_num_to_letter(start_col_num)
+            end_col = col_num_to_letter(end_col_num)
+            
+            # Read the grid
+            range_str = f"'{actual_tab_name}'!{start_col}{start_row}:{end_col}{end_row}"
+            
+            sheet = self.service.spreadsheets()
+            result = sheet.values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_str
+            ).execute()
+            
+            values = result.get('values', [])
+            
+            # Pad rows to ensure we have 10 rows
+            while len(values) < 10:
+                values.append(['', '', '', ''])
+            
+            # Pad each row to ensure 4 columns
+            for i in range(len(values)):
+                while len(values[i]) < 4:
+                    values[i].append('')
+            
+            # Convert to CSV format
+            from io import StringIO
+            import csv as csv_module
+            output = StringIO()
+            writer = csv_module.writer(output)
+            for row in values:
+                writer.writerow(row)
+            csv_data = output.getvalue()
+            
+            # Deserialize using ScheduleFormatter
+            formatter = ScheduleFormatter()
+            day_name = f"{date_obj.strftime('%A')} {date_obj.strftime('%Y-%m-%d')}"
+            day_schedule = formatter.deserialize_from_csv(csv_data, day_name)
+            
+            return day_schedule
+            
+        except HttpError as err:
+            print(f"An error occurred: {err}")
+            return None
+    
+    def put_day(self, spreadsheet_id: str, tab_name: str, day: int, day_schedule):
+        """
+        Write a DaySchedule back to a specific day in a Google Sheets tab.
+        
+        Args:
+            spreadsheet_id: The ID of the Google Spreadsheet
+            tab_name: Name of the tab to write to
+            day: Day of month (1-31)
+            day_schedule: DaySchedule object to write
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        from schedule_formatter import ScheduleFormatter
+        from datetime import datetime
+        import calendar as cal
+        
+        try:
+            # Apply live_test override if enabled
+            actual_tab_name = self._get_tab_name(tab_name)
+            
+            # Calculate the grid position for this day (same logic as get_day)
+            # If live_test mode, use January 2026 for calculations
+            if self.live_test:
+                month = 1
+                year = 2026
+            else:
+                tab_parts = tab_name.split()
+                if len(tab_parts) >= 2:
+                    month_name = tab_parts[0]
+                    year = int(tab_parts[1])
+                    month = list(cal.month_name).index(month_name)
+                else:
+                    raise ValueError(f"Invalid tab name format: {tab_name}")
+            
+            date_obj = datetime(year, month, day)
+            weekday = date_obj.weekday()
+            day_of_week = (weekday + 1) % 7
+            
+            first_day_of_month = datetime(year, month, 1)
+            first_weekday = first_day_of_month.weekday()
+            first_day_of_week = (first_weekday + 1) % 7
+            
+            days_from_first = day - 1
+            week_number = (days_from_first + first_day_of_week) // 7
+            
+            start_row = 6 + (week_number * 10)
+            col_offset = day_of_week * 4
+            start_col_num = 2 + col_offset
+            
+            def col_num_to_letter(n):
+                result = ""
+                while n > 0:
+                    n -= 1
+                    result = chr(65 + (n % 26)) + result
+                    n //= 26
+                return result
+            
+            start_col = col_num_to_letter(start_col_num)
+            
+            # Format the day schedule
+            formatter = ScheduleFormatter()
+            day_grid = formatter.format_day(day_schedule)
+            
+            # Update the spreadsheet
+            range_str = f"'{actual_tab_name}'!{start_col}{start_row}"
+            
+            body = {
+                'values': day_grid
+            }
+            
+            sheet = self.service.spreadsheets()
+            result = sheet.values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_str,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+            
+            print(f"Successfully updated day {day} in '{actual_tab_name}' ({result.get('updatedCells')} cells)")
+            
+            # Apply red text formatting to cells with [No Crew]
+            self._format_no_crew_cells(spreadsheet_id, actual_tab_name, start_row, start_col_num, day_grid)
+            
+            return True
+            
+        except HttpError as err:
+            print(f"An error occurred: {err}")
+            return False
+    
+    def _format_no_crew_cells(self, spreadsheet_id: str, tab_name: str, start_row: int, start_col_num: int, day_grid: list):
+        """
+        Apply red text formatting to cells containing [No Crew], and reset all other cells to black.
+        
+        Args:
+            spreadsheet_id: The ID of the Google Spreadsheet
+            tab_name: Name of the tab
+            start_row: Starting row number (1-indexed)
+            start_col_num: Starting column number (1-indexed, A=1, B=2, etc.)
+            day_grid: The 10x4 grid of cell values
+        """
+        try:
+            requests = []
+            
+            # First, reset ALL cells in the day grid to black
+            sheet_id = self._get_sheet_id(spreadsheet_id, tab_name)
+            requests.append({
+                'repeatCell': {
+                    'range': {
+                        'sheetId': sheet_id,
+                        'startRowIndex': start_row - 1,  # Convert to 0-indexed
+                        'endRowIndex': start_row - 1 + len(day_grid),
+                        'startColumnIndex': start_col_num - 1,
+                        'endColumnIndex': start_col_num - 1 + 4  # 4 columns wide
+                    },
+                    'cell': {
+                        'userEnteredFormat': {
+                            'textFormat': {
+                                'foregroundColor': {
+                                    'red': 0.0,
+                                    'green': 0.0,
+                                    'blue': 0.0
+                                }
+                            }
+                        }
+                    },
+                    'fields': 'userEnteredFormat.textFormat.foregroundColor'
+                }
+            })
+            
+            # Then, apply red formatting to cells with [No Crew]
+            for row_idx, row in enumerate(day_grid):
+                for col_idx, cell_value in enumerate(row):
+                    if '[No Crew]' in str(cell_value):
+                        # Calculate actual row and column in sheet
+                        sheet_row = start_row + row_idx - 1  # Convert to 0-indexed
+                        sheet_col = start_col_num + col_idx - 1  # Convert to 0-indexed
+                        
+                        # Create format request for red text
+                        requests.append({
+                            'repeatCell': {
+                                'range': {
+                                    'sheetId': sheet_id,
+                                    'startRowIndex': sheet_row,
+                                    'endRowIndex': sheet_row + 1,
+                                    'startColumnIndex': sheet_col,
+                                    'endColumnIndex': sheet_col + 1
+                                },
+                                'cell': {
+                                    'userEnteredFormat': {
+                                        'textFormat': {
+                                            'foregroundColor': {
+                                                'red': 1.0,
+                                                'green': 0.0,
+                                                'blue': 0.0
+                                            }
+                                        }
+                                    }
+                                },
+                                'fields': 'userEnteredFormat.textFormat.foregroundColor'
+                            }
+                        })
+            
+            # Apply all formatting requests in a single batch
+            if requests:
+                body = {
+                    'requests': requests
+                }
+                
+                self.service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body=body
+                ).execute()
+                
+                no_crew_count = len(requests) - 1  # Subtract the reset request
+                print(f"Reset all cells to black, then applied red formatting to {no_crew_count} cells with [No Crew]")
+        
+        except HttpError as err:
+            print(f"Warning: Could not apply formatting: {err}")
+    
+    def _get_sheet_id(self, spreadsheet_id: str, tab_name: str) -> int:
+        """
+        Get the sheet ID for a given tab name.
+        
+        Args:
+            spreadsheet_id: The ID of the Google Spreadsheet
+            tab_name: Name of the tab
+            
+        Returns:
+            Sheet ID (integer)
+        """
+        try:
+            spreadsheet = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            for sheet in spreadsheet['sheets']:
+                if sheet['properties']['title'] == tab_name:
+                    return sheet['properties']['sheetId']
+            
+            # If not found, return 0 (first sheet)
+            return 0
+        
+        except HttpError as err:
+            print(f"Warning: Could not get sheet ID: {err}")
+            return 0
 
 
 # Example usage
