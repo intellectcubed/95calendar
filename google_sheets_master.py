@@ -6,7 +6,8 @@ Handles reading territory assignments from Google Sheets templates.
 
 import os.path
 import json
-from typing import Dict, List
+import time
+from typing import Dict, List, Callable, Any
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -30,18 +31,23 @@ class TerritoryAssignment:
 class GoogleSheetsMaster:
     """Manages Google Sheets operations for rescue squad scheduling."""
     
-    def __init__(self, credentials_path: str = 'credentials.json', live_test: bool = False):
+    def __init__(self, credentials_path: str = 'credentials.json', live_test: bool = False, 
+                 max_retries: int = 5, retry_backoff_seconds: float = 5.0):
         """
         Initialize GoogleSheetsMaster with credentials.
         
         Args:
             credentials_path: Path to the Google API credentials JSON file
             live_test: If True, use "Testing" tab formatted as January 2026
+            max_retries: Maximum number of retry attempts for rate-limited requests (default: 5)
+            retry_backoff_seconds: Base backoff time in seconds for exponential backoff (default: 5.0)
         """
         self.credentials_path = credentials_path
         self.creds = None
         self.service = None
         self.live_test = live_test
+        self.max_retries = max_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
         self._authenticate()
     
     def _authenticate(self):
@@ -78,6 +84,48 @@ class GoogleSheetsMaster:
             return "Testing"
         return tab_name
     
+    def _retry_with_backoff(self, func: Callable, *args, **kwargs) -> Any:
+        """
+        Execute a function with exponential backoff retry on rate limit errors.
+        
+        Args:
+            func: The function to execute
+            *args: Positional arguments to pass to the function
+            **kwargs: Keyword arguments to pass to the function
+            
+        Returns:
+            The result of the function call
+            
+        Raises:
+            HttpError: If all retries are exhausted or a non-retryable error occurs
+        """
+        last_error = None
+        
+        for attempt in range(self.max_retries):
+            try:
+                return func(*args, **kwargs)
+            except HttpError as err:
+                last_error = err
+                
+                # Check if this is a rate limit error (429)
+                if err.resp.status == 429:
+                    if attempt < self.max_retries - 1:
+                        # Calculate backoff time with exponential increase
+                        backoff_time = self.retry_backoff_seconds * (2 ** attempt)
+                        print(f"Rate limit hit (429). Retrying in {backoff_time:.1f} seconds... (attempt {attempt + 1}/{self.max_retries})")
+                        time.sleep(backoff_time)
+                        continue
+                    else:
+                        print(f"Rate limit hit (429). Max retries ({self.max_retries}) exhausted.")
+                        raise
+                else:
+                    # Non-retryable error, raise immediately
+                    raise
+        
+        # If we get here, all retries were exhausted
+        if last_error:
+            raise last_error
+    
     def read_territories(self, spreadsheet_id: str) -> Dict[str, List[TerritoryAssignment]]:
         """
         Read territory assignments from a Google Sheets template.
@@ -97,18 +145,22 @@ class GoogleSheetsMaster:
             
             # Read the two squad table from "Territories" tab (B1:F100, assuming max 100 rows)
             two_squad_range = 'Territories!B1:F100'
-            two_squad_result = sheet.values().get(
-                spreadsheetId=spreadsheet_id,
-                range=two_squad_range
-            ).execute()
+            two_squad_result = self._retry_with_backoff(
+                lambda: sheet.values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=two_squad_range
+                ).execute()
+            )
             two_squad_values = two_squad_result.get('values', [])
             
             # Read the three squad table from "Territories" tab (H1:N100)
             three_squad_range = 'Territories!H1:N100'
-            three_squad_result = sheet.values().get(
-                spreadsheetId=spreadsheet_id,
-                range=three_squad_range
-            ).execute()
+            three_squad_result = self._retry_with_backoff(
+                lambda: sheet.values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=three_squad_range
+                ).execute()
+            )
             three_squad_values = three_squad_result.get('values', [])
             
             # Parse both tables and combine into one map
@@ -217,10 +269,12 @@ class GoogleSheetsMaster:
             
             # Check if cell A100 contains "editable"
             check_range = f"'{actual_tab_name}'!A100"
-            check_result = sheet.values().get(
-                spreadsheetId=spreadsheet_id,
-                range=check_range
-            ).execute()
+            check_result = self._retry_with_backoff(
+                lambda: sheet.values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=check_range
+                ).execute()
+            )
             
             check_values = check_result.get('values', [])
             if not check_values or not check_values[0] or check_values[0][0].lower() != 'editable':
@@ -301,12 +355,14 @@ class GoogleSheetsMaster:
                 'values': all_data
             }
             
-            result = sheet.values().update(
-                spreadsheetId=spreadsheet_id,
-                range=update_range,
-                valueInputOption='RAW',
-                body=body
-            ).execute()
+            result = self._retry_with_backoff(
+                lambda: sheet.values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=update_range,
+                    valueInputOption='RAW',
+                    body=body
+                ).execute()
+            )
             
             print(f"Successfully updated {result.get('updatedCells')} cells in '{actual_tab_name}'")
             
@@ -372,10 +428,12 @@ class GoogleSheetsMaster:
                     'requests': requests
                 }
                 
-                self.service.spreadsheets().batchUpdate(
-                    spreadsheetId=spreadsheet_id,
-                    body=body
-                ).execute()
+                self._retry_with_backoff(
+                    lambda: self.service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body=body
+                    ).execute()
+                )
                 
                 print(f"Applied red formatting to {len(requests)} cells with [No Crew]")
         
@@ -459,10 +517,12 @@ class GoogleSheetsMaster:
             range_str = f"'{actual_tab_name}'!{start_col}{start_row}:{end_col}{end_row}"
             
             sheet = self.service.spreadsheets()
-            result = sheet.values().get(
-                spreadsheetId=spreadsheet_id,
-                range=range_str
-            ).execute()
+            result = self._retry_with_backoff(
+                lambda: sheet.values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_str
+                ).execute()
+            )
             
             values = result.get('values', [])
             
@@ -567,12 +627,14 @@ class GoogleSheetsMaster:
             }
             
             sheet = self.service.spreadsheets()
-            result = sheet.values().update(
-                spreadsheetId=spreadsheet_id,
-                range=range_str,
-                valueInputOption='RAW',
-                body=body
-            ).execute()
+            result = self._retry_with_backoff(
+                lambda: sheet.values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_str,
+                    valueInputOption='RAW',
+                    body=body
+                ).execute()
+            )
             
             print(f"Successfully updated day {day} in '{actual_tab_name}' ({result.get('updatedCells')} cells)")
             
@@ -664,10 +726,12 @@ class GoogleSheetsMaster:
                     'requests': requests
                 }
                 
-                self.service.spreadsheets().batchUpdate(
-                    spreadsheetId=spreadsheet_id,
-                    body=body
-                ).execute()
+                self._retry_with_backoff(
+                    lambda: self.service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body=body
+                    ).execute()
+                )
                 
                 no_crew_count = len(requests) - 1  # Subtract the reset request
                 print(f"Reset all cells to black, then applied red formatting to {no_crew_count} cells with [No Crew]")
@@ -687,7 +751,9 @@ class GoogleSheetsMaster:
             Sheet ID (integer)
         """
         try:
-            spreadsheet = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            spreadsheet = self._retry_with_backoff(
+                lambda: self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            )
             for sheet in spreadsheet['sheets']:
                 if sheet['properties']['title'] == tab_name:
                     return sheet['properties']['sheetId']

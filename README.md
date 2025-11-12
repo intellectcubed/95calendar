@@ -60,6 +60,8 @@ The `GoogleSheetsMaster` class uses service account authentication:
    - Give "Viewer" or "Editor" access depending on your needs
 3. No user authorization required - service accounts authenticate automatically
 
+**Rate Limiting:** The system automatically handles Google API rate limits (HTTP 429 errors) with exponential backoff retry logic. See [RETRY_LOGIC.md](RETRY_LOGIC.md) for configuration details.
+
 ### 5. CSV Template Format
 
 The CSV template should be located at `/Users/george.nowakowski/Downloads/station95template.csv` (or specify a custom path).
