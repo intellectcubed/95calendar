@@ -113,7 +113,12 @@ class TestCalendarCommands:
         
         # Execute command
         result = commands.execute_command(
-            '/?action=noCrew&date=20260101&shift_start=1900&shift_end=2100&squad=42'
+            action='noCrew',
+            date='20260101',
+            shift_start='1900',
+            shift_end='2100',
+            squad=42,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -149,7 +154,12 @@ class TestCalendarCommands:
         print("="*80)
         
         result = commands.execute_command(
-            '/?action=noCrew&date=20260102&shift_start=1800&shift_end=0600&squad=35'
+            action='noCrew',
+            date='20260102',
+            shift_start='1800',
+            shift_end='0600',
+            squad=35,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -177,7 +187,12 @@ class TestCalendarCommands:
         print("="*80)
         
         result = commands.execute_command(
-            '/?action=obliterateShift&date=20260103&shift_start=0600&shift_end=0600&squad=35'
+            action='obliterateShift',
+            date='20260103',
+            shift_start='0600',
+            shift_end='0600',
+            squad=35,
+            preview=False
         )
 
         assert result['success'], f"Command failed: {result}"
@@ -206,7 +221,12 @@ class TestCalendarCommands:
         print(f"Initial Tango: {initial_tango}")
         
         result = commands.execute_command(
-            '/?action=noCrew&date=20260103&shift_start=0000&shift_end=0300&squad=43'
+            action='noCrew',
+            date='20260103',
+            shift_start='0000',
+            shift_end='0300',
+            squad=43,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -241,7 +261,12 @@ class TestCalendarCommands:
         print(f"Initial squads: {initial_squads}")
         
         result = commands.execute_command(
-            '/?action=addShift&date=20260104&shift_start=1800&shift_end=0600&squad=43'
+            action='addShift',
+            date='20260104',
+            shift_start='1800',
+            shift_end='0600',
+            squad=43,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -267,7 +292,12 @@ class TestCalendarCommands:
         initial_tango = initial.shifts[0].tango if initial.shifts else None
         
         result = commands.execute_command(
-            f'/?action=noCrew&date=20260105&shift_start=2200&shift_end=0600&squad={initial_tango}'
+            action='noCrew',
+            date='20260105',
+            shift_start='2200',
+            shift_end='0600',
+            squad=initial_tango,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -288,7 +318,12 @@ class TestCalendarCommands:
         print("="*80)
         
         result = commands.execute_command(
-            '/?action=addShift&date=20260106&shift_start=0600&shift_end=1800&squad=34'
+            action='addShift',
+            date='20260106',
+            shift_start='0600',
+            shift_end='1800',
+            squad=34,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -312,7 +347,12 @@ class TestCalendarCommands:
         print("="*80)
         
         result = commands.execute_command(
-            '/?action=obliterateShift&date=20260107&shift_start=1800&shift_end=0600&squad=43'
+            action='obliterateShift',
+            date='20260107',
+            shift_start='1800',
+            shift_end='0600',
+            squad=43,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -335,7 +375,12 @@ class TestCalendarCommands:
         print("="*80)
         
         result = commands.execute_command(
-            '/?action=addShift&date=20260108&shift_start=2000&shift_end=0000&squad=35'
+            action='addShift',
+            date='20260108',
+            shift_start='2000',
+            shift_end='0000',
+            squad=35,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -367,7 +412,12 @@ class TestCalendarCommands:
         print("="*80)
         
         result = commands.execute_command(
-            '/?action=noCrew&date=20260108&shift_start=2000&shift_end=0000&squad=34'
+            action='noCrew',
+            date='20260108',
+            shift_start='2000',
+            shift_end='0000',
+            squad=34,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -393,7 +443,12 @@ class TestCalendarCommands:
         print("="*80)
         
         result = commands.execute_command(
-            '/?action=obliterateShift&date=20260109&shift_start=1800&shift_end=0600&squad=35'
+            action='obliterateShift',
+            date='20260109',
+            shift_start='1800',
+            shift_end='0600',
+            squad=35,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         
@@ -420,7 +475,12 @@ class TestCalendarCommands:
         print(f"Initial squads: {initial_squads}")
         
         result = commands.execute_command(
-            '/?action=addShift&date=20260110&shift_start=1800&shift_end=0600&squad=54'
+            action='addShift',
+            date='20260110',
+            shift_start='1800',
+            shift_end='0600',
+            squad=54,
+            preview=False
         )
         assert result['success'], f"Command failed: {result}"
         

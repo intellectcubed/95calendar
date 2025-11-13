@@ -7,7 +7,6 @@ Processes command requests to modify schedules in Google Sheets.
 import os
 from datetime import datetime, time, timedelta
 from typing import Dict, List, Optional
-from urllib.parse import parse_qs, urlparse
 from calendar_models import Squad, ShiftSegment, Shift, DaySchedule
 from google_sheets_master import GoogleSheetsMaster
 from change_backup_manager import ChangeBackupManager
@@ -42,29 +41,28 @@ class CalendarCommands:
         else:
             self.backup_manager = None
     
-    def execute_command(self, command_url: str) -> Dict:
+    def execute_command(self, action: str, date: str, shift_start: str = None, shift_end: str = None, squad: int = None, preview: bool = True) -> Dict:
         """
-        Execute a calendar command from a URL-style query string.
+        Execute a calendar command.
         
         Args:
-            command_url: URL with query parameters (e.g., "/?action=noCrew&date=20251110&shift_start=1800&shift_end=0600&squad=42")
+            action: Command action (e.g., 'noCrew', 'addShift', 'obliterateShift', 'get_schedule_day')
+            date: Date in YYYYMMDD format (e.g., "20260110")
+            shift_start: Start time in HHMM format (e.g., "1800"), optional
+            shift_end: End time in HHMM format (e.g., "0600"), optional
+            squad: Squad ID (e.g., 34, 35, 42, 43, 54), optional
+            preview: If True, return modified grid without writing to sheets (default: True)
             
         Returns:
-            Dictionary with result status and changeId
+            Dictionary with result status, changeId, and optionally modified_grid
         """
-        # Parse the URL
-        parsed = urlparse(command_url)
-        params = parse_qs(parsed.query)
+        if not action or not date:
+            return {'success': False, 'error': 'Missing required parameters: action and date'}
         
-        # Extract parameters
-        action = params.get('action', [None])[0]
-        date_str = params.get('date', [None])[0]
-        shift_start_str = params.get('shift_start', [None])[0]
-        shift_end_str = params.get('shift_end', [None])[0]
-        squad_id = int(params.get('squad', [0])[0]) if params.get('squad') else None
-        
-        if not action or not date_str:
-            return {'success': False, 'error': 'Missing required parameters'}
+        date_str = date
+        shift_start_str = shift_start
+        shift_end_str = shift_end
+        squad_id = squad
         
         # Parse date
         date_obj = datetime.strptime(date_str, '%Y%m%d')
@@ -86,6 +84,16 @@ class CalendarCommands:
         if not day_schedule:
             return {'success': False, 'error': 'Could not retrieve day schedule'}
         
+        # Handle get_schedule_day command (read-only, returns immediately)
+        if action == 'get_schedule_day':
+            grid = self.formatter.format_day(day_schedule)
+            return {
+                'success': True,
+                'action': 'get_schedule_day',
+                'date': date_str,
+                'grid': grid
+            }
+        
         # Save backup of original state before modification (skip in test mode)
         backup_id = None
         if not self.live_test:
@@ -94,11 +102,20 @@ class CalendarCommands:
             if shift_start and shift_end:
                 description += f" ({shift_start.strftime('%H%M')}-{shift_end.strftime('%H%M')})"
             
+            # Build command string for audit trail
+            command_str = f"action={action}&date={date_str}"
+            if shift_start_str:
+                command_str += f"&shift_start={shift_start_str}"
+            if shift_end_str:
+                command_str += f"&shift_end={shift_end_str}"
+            if squad_id:
+                command_str += f"&squad={squad_id}"
+            
             backup_id = self.backup_manager.save_grid(
                 day=date_str,
                 grid=original_grid,
                 description=description,
-                command=command_url
+                command=command_str
             )
         
         # Execute the command
@@ -113,7 +130,19 @@ class CalendarCommands:
         
         print('Modified schedule: ')
         print(modified_schedule)
-        # Write back to sheet
+        
+        # If preview mode, return the modified grid without writing to sheets
+        if preview:
+            modified_grid = self.formatter.format_day(modified_schedule)
+            return {
+                'success': True,
+                'preview': True,
+                'modified_grid': modified_grid,
+                'action': action,
+                'date': date_str
+            }
+        
+        # Write back to sheet (non-preview mode)
         success = self.sheets_master.put_day(self.spreadsheet_id, tab_name, day, modified_schedule)
         
         return {
@@ -123,6 +152,7 @@ class CalendarCommands:
             'date': date_str
         }
     
+
     def _parse_time(self, time_str: str) -> time:
         """Parse time string in HHMM format."""
         if len(time_str) == 3:
@@ -625,6 +655,34 @@ if __name__ == "__main__":
     # Example command
     commands = CalendarCommands(spreadsheet_id)
     
-    # Execute a noCrew command
-    result = commands.execute_command('/?action=noCrew&date=20260109&shift_start=1900&shift_end=2100&squad=43')
+    # Get a day's schedule
+    schedule_result = commands.execute_command(
+        action='get_schedule_day',
+        date='20260109'
+    )
+    print("Current schedule:")
+    print(schedule_result)
+    
+    # Execute a noCrew command (preview mode)
+    result = commands.execute_command(
+        action='noCrew',
+        date='20260109',
+        shift_start='1900',
+        shift_end='2100',
+        squad=43,
+        preview=True
+    )
+    print("\nPreview result:")
+    print(result)
+    
+    # Execute with actual write to sheets
+    result = commands.execute_command(
+        action='noCrew',
+        date='20260109',
+        shift_start='1900',
+        shift_end='2100',
+        squad=43,
+        preview=False
+    )
+    print("\nExecute result:")
     print(result)

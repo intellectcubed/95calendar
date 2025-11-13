@@ -59,8 +59,6 @@ class ManualCalendarUpdater:
         Returns:
             Result dictionary from command execution
         """
-        command_url = f'/?action=noCrew&date={date}&shift_start={shift_start}&shift_end={shift_end}&squad={squad}'
-        
         print(f"\nExecuting noCrew command:")
         print(f"  Date: {self._format_date(date)}")
         print(f"  Time: {self._format_time(shift_start)} - {self._format_time(shift_end)}")
@@ -72,7 +70,14 @@ class ManualCalendarUpdater:
                 print("Command cancelled.")
                 return {'success': False, 'error': 'User cancelled'}
         
-        result = self.commands.execute_command(command_url)
+        result = self.commands.execute_command(
+            action='noCrew',
+            date=date,
+            shift_start=shift_start,
+            shift_end=shift_end,
+            squad=squad,
+            preview=False
+        )
         self._print_result(result)
         return result
     
@@ -89,8 +94,6 @@ class ManualCalendarUpdater:
         Returns:
             Result dictionary from command execution
         """
-        command_url = f'/?action=addShift&date={date}&shift_start={shift_start}&shift_end={shift_end}&squad={squad}'
-        
         print(f"\nExecuting addShift command:")
         print(f"  Date: {self._format_date(date)}")
         print(f"  Time: {self._format_time(shift_start)} - {self._format_time(shift_end)}")
@@ -102,7 +105,14 @@ class ManualCalendarUpdater:
                 print("Command cancelled.")
                 return {'success': False, 'error': 'User cancelled'}
         
-        result = self.commands.execute_command(command_url)
+        result = self.commands.execute_command(
+            action='addShift',
+            date=date,
+            shift_start=shift_start,
+            shift_end=shift_end,
+            squad=squad,
+            preview=False
+        )
         self._print_result(result)
         return result
     
@@ -119,8 +129,6 @@ class ManualCalendarUpdater:
         Returns:
             Result dictionary from command execution
         """
-        command_url = f'/?action=obliterateShift&date={date}&shift_start={shift_start}&shift_end={shift_end}&squad={squad}'
-        
         print(f"\nExecuting obliterateShift command:")
         print(f"  Date: {self._format_date(date)}")
         print(f"  Time: {self._format_time(shift_start)} - {self._format_time(shift_end)}")
@@ -132,8 +140,44 @@ class ManualCalendarUpdater:
                 print("Command cancelled.")
                 return {'success': False, 'error': 'User cancelled'}
         
-        result = self.commands.execute_command(command_url)
+        result = self.commands.execute_command(
+            action='obliterateShift',
+            date=date,
+            shift_start=shift_start,
+            shift_end=shift_end,
+            squad=squad,
+            preview=False
+        )
         self._print_result(result)
+        return result
+    
+    def get_schedule(self, date: str):
+        """
+        Get the current schedule for a specific date.
+        
+        Args:
+            date: Date in YYYYMMDD format (e.g., "20260110")
+        
+        Returns:
+            Result dictionary with schedule grid
+        """
+        print(f"\nRetrieving schedule for {self._format_date(date)}:")
+        
+        result = self.commands.execute_command(
+            action='get_schedule_day',
+            date=date
+        )
+        
+        if result.get('success'):
+            print("\n✓ Schedule retrieved successfully")
+            print("\nSchedule Grid:")
+            for i, row in enumerate(result['grid']):
+                print(f"  Row {i}: {row}")
+        else:
+            print(f"\n✗ Failed to retrieve schedule")
+            if 'error' in result:
+                print(f"  Error: {result['error']}")
+        
         return result
     
     def revert(self, date: str, change_id: str = None):
@@ -265,6 +309,9 @@ Examples:
   # List backups and choose one to revert (interactive)
   python man_update_calendar.py revert --date 20260110
   
+  # Get current schedule for a date
+  python man_update_calendar.py get-schedule --date 20260110
+  
 Environment Variables:
   SPREADSHEET_ID - Required. The Google Spreadsheet ID to update.
   
@@ -329,6 +376,12 @@ Environment Variables:
     listbackups_parser.add_argument('--date', required=True,
                                    help='Date in YYYYMMDD format (e.g., 20260110)')
     
+    # get-schedule command
+    getschedule_parser = subparsers.add_parser('get-schedule',
+                                               help='Get the current schedule for a date')
+    getschedule_parser.add_argument('--date', required=True,
+                                   help='Date in YYYYMMDD format (e.g., 20260110)')
+    
     args = parser.parse_args()
     
     # Check if command was provided
@@ -351,6 +404,8 @@ Environment Variables:
             result = updater.revert(args.date, args.change_id)
         elif args.command == 'list-backups':
             result = {'success': True, 'backups': updater.list_backups(args.date)}
+        elif args.command == 'get-schedule':
+            result = updater.get_schedule(args.date)
         
         # Exit with appropriate code
         sys.exit(0 if result.get('success') else 1)
