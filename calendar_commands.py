@@ -41,16 +41,17 @@ class CalendarCommands:
         else:
             self.backup_manager = None
     
-    def execute_command(self, action: str, date: str, shift_start: str = None, shift_end: str = None, squad: int = None, preview: bool = True) -> Dict:
+    def execute_command(self, action: str, date: str, shift_start: str = None, shift_end: str = None, squad: int = None, change_id: str = None, preview: bool = True) -> Dict:
         """
         Execute a calendar command.
         
         Args:
-            action: Command action (e.g., 'noCrew', 'addShift', 'obliterateShift', 'get_schedule_day')
+            action: Command action (e.g., 'noCrew', 'addShift', 'obliterateShift', 'get_schedule_day', 'list_backups', 'rollback')
             date: Date in YYYYMMDD format (e.g., "20260110")
             shift_start: Start time in HHMM format (e.g., "1800"), optional
             shift_end: End time in HHMM format (e.g., "0600"), optional
             squad: Squad ID (e.g., 34, 35, 42, 43, 54), optional
+            change_id: Snapshot ID for rollback action, optional
             preview: If True, return modified grid without writing to sheets (default: True)
             
         Returns:
@@ -84,8 +85,9 @@ class CalendarCommands:
         if not day_schedule:
             return {'success': False, 'error': 'Could not retrieve day schedule'}
         
-        # Handle get_schedule_day command (read-only, returns immediately)
+        # Execute the command based on action
         if action == 'get_schedule_day':
+            # Read-only command - return current schedule
             grid = self.formatter.format_day(day_schedule)
             return {
                 'success': True,
@@ -93,6 +95,28 @@ class CalendarCommands:
                 'date': date_str,
                 'grid': grid
             }
+        elif action == 'list_backups':
+            # Read-only command - list backup snapshots
+            backups = self.list_backups(date_str)
+            return {
+                'success': True,
+                'action': 'list_backups',
+                'date': date_str,
+                'backups': backups
+            }
+        elif action == 'rollback':
+            # Restore from backup snapshot
+            if not change_id:
+                return {'success': False, 'error': 'change_id is required for rollback action'}
+            return self.rollback(change_id, date_str)
+        elif action == 'noCrew':
+            modified_schedule = self._no_crew(day_schedule, shift_start, shift_end, squad_id)
+        elif action == 'addShift':
+            modified_schedule = self._add_shift(day_schedule, shift_start, shift_end, squad_id)
+        elif action == 'obliterateShift':
+            modified_schedule = self._obliterate_shift(day_schedule, shift_start, shift_end, squad_id)
+        else:
+            return {'success': False, 'error': f'Unknown action: {action}'}
         
         # Save backup of original state before modification (skip in test mode)
         backup_id = None
@@ -117,16 +141,6 @@ class CalendarCommands:
                 description=description,
                 command=command_str
             )
-        
-        # Execute the command
-        if action == 'noCrew':
-            modified_schedule = self._no_crew(day_schedule, shift_start, shift_end, squad_id)
-        elif action == 'addShift':
-            modified_schedule = self._add_shift(day_schedule, shift_start, shift_end, squad_id)
-        elif action == 'obliterateShift':
-            modified_schedule = self._obliterate_shift(day_schedule, shift_start, shift_end, squad_id)
-        else:
-            return {'success': False, 'error': f'Unknown action: {action}'}
         
         print('Modified schedule: ')
         print(modified_schedule)
@@ -686,3 +700,22 @@ if __name__ == "__main__":
     )
     print("\nExecute result:")
     print(result)
+    
+    # List backups for a date
+    backups_result = commands.execute_command(
+        action='list_backups',
+        date='20260109'
+    )
+    print("\nList backups result:")
+    print(backups_result)
+    
+    # Rollback to a snapshot
+    if backups_result.get('backups'):
+        snapshot_id = backups_result['backups'][0]['id']
+        rollback_result = commands.execute_command(
+            action='rollback',
+            date='20260109',
+            change_id=snapshot_id
+        )
+        print("\nRollback result:")
+        print(rollback_result)

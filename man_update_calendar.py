@@ -193,21 +193,8 @@ class ManualCalendarUpdater:
             Result dictionary from revert operation
         """
         if not change_id:
-            # List available backups for this date
-            print(f"\nAvailable backups for {self._format_date(date)}:")
-            backups = self.commands.list_backups(date)
-            
-            if not backups:
-                print("  No backups found for this date.")
-                return {'success': False, 'error': 'No backups found'}
-            
-            for i, backup in enumerate(backups, 1):
-                print(f"\n  {i}. Snapshot ID: {backup['id']}")
-                print(f"     Created: {backup['created_at']}")
-                print(f"     Description: {backup['description']}")
-                print(f"     Command: {backup['command']}")
-                print(f"     Expires: {backup['expires_at']}")
-            
+            # Delegate to list_backups for display
+            self.list_backups(date)
             print("\nTo revert to a snapshot, run:")
             print(f"  python man_update_calendar.py revert --date {date} --change-id <snapshot-id>")
             return {'success': True, 'message': 'Listed available backups'}
@@ -223,13 +210,18 @@ class ManualCalendarUpdater:
                 print("Revert cancelled.")
                 return {'success': False, 'error': 'User cancelled'}
         
-        result = self.commands.rollback(change_id, date)
+        # Delegate to calendar_commands via execute_command
+        result = self.commands.execute_command(
+            action='rollback',
+            date=date,
+            change_id=change_id
+        )
         self._print_result(result)
         return result
     
     def list_backups(self, date: str):
         """
-        List all backup snapshots for a given date.
+        List all backup snapshots for a given date (CLI wrapper).
         
         Args:
             date: Date in YYYYMMDD format (e.g., "20260110")
@@ -238,12 +230,20 @@ class ManualCalendarUpdater:
             List of backup snapshots
         """
         print(f"\nBackups for {self._format_date(date)}:")
-        backups = self.commands.list_backups(date)
+        
+        # Delegate to calendar_commands via execute_command
+        result = self.commands.execute_command(
+            action='list_backups',
+            date=date
+        )
+        
+        backups = result.get('backups', [])
         
         if not backups:
             print("  No backups found for this date.")
             return []
         
+        # Format and display backups (CLI-specific presentation)
         for i, backup in enumerate(backups, 1):
             print(f"\n  {i}. Snapshot ID: {backup['id']}")
             print(f"     Created: {backup['created_at']}")
