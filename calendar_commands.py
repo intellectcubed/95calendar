@@ -118,7 +118,21 @@ class CalendarCommands:
         else:
             return {'success': False, 'error': f'Unknown action: {action}'}
         
-        # Save backup of original state before modification (skip in test mode)
+        print('Modified schedule: ')
+        print(modified_schedule)
+        
+        # If preview mode, return the modified grid without writing to sheets or creating backup
+        if preview:
+            modified_grid = self.formatter.format_day(modified_schedule)
+            return {
+                'success': True,
+                'preview': True,
+                'modified_grid': modified_grid,
+                'action': action,
+                'date': date_str
+            }
+        
+        # Save backup of original state before modification (only when actually writing, skip in test mode)
         backup_id = None
         if not self.live_test:
             original_grid = self.formatter.format_day(day_schedule)
@@ -141,20 +155,6 @@ class CalendarCommands:
                 description=description,
                 command=command_str
             )
-        
-        print('Modified schedule: ')
-        print(modified_schedule)
-        
-        # If preview mode, return the modified grid without writing to sheets
-        if preview:
-            modified_grid = self.formatter.format_day(modified_schedule)
-            return {
-                'success': True,
-                'preview': True,
-                'modified_grid': modified_grid,
-                'action': action,
-                'date': date_str
-            }
         
         # Write back to sheet (non-preview mode)
         success = self.sheets_master.put_day(self.spreadsheet_id, tab_name, day, modified_schedule)
