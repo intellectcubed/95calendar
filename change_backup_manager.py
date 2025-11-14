@@ -96,12 +96,30 @@ class ChangeBackupManager:
             self.supabase.table("day_snapshots")
             .select("id, created_at, description, command, expires_at")
             .eq("day", str(day))
-            .order("created_at", desc=False)
+            .order("created_at", desc=True)
             .execute()
         )
         snapshots = res.data or []
         print(f"📜 Found {len(snapshots)} snapshots for day {day}")
         return snapshots
+    
+    def remove_snapshot(self, snapshot_id: str) -> dict:
+        """
+        Permanently remove a snapshot entry from the day_snapshots table.
+        
+        Args:
+            snapshot_id: UUID string of the snapshot to remove
+            
+        Returns:
+            Dictionary with success status and snapshot ID or error message
+        """
+        try:
+            res = self.supabase.table("day_snapshots").delete().eq("id", str(snapshot_id)).execute()
+            print(f"🗑️  Removed snapshot {snapshot_id}")
+            return {"success": True, "id": snapshot_id}
+        except Exception as e:
+            print(f"❌ Failed to remove snapshot {snapshot_id}: {str(e)}")
+            return {"success": False, "error": str(e)}
 
 
 # -------------------------
@@ -132,6 +150,10 @@ if __name__ == "__main__":
     last_id = snapshots[-1]["id"]
     restored_grid = manager.revert_to_snapshot(last_id)
     print("Restored Grid:", restored_grid)
+    
+    # Remove snapshot after successful restore
+    remove_result = manager.remove_snapshot(last_id)
+    print(f"Snapshot removal: {remove_result}")
 
     # Cleanup expired backups
     manager.cleanup_expired_snapshots()

@@ -528,11 +528,23 @@ class CalendarCommands:
             # We don't need to convert to DaySchedule and back - just write the grid
             success = self._write_grid_to_sheet(self.spreadsheet_id, tab_name, day, backup_grid)
             
+            if not success:
+                return {
+                    'success': False,
+                    'error': 'Failed to write restored grid to sheet',
+                    'changeId': change_id,
+                    'date': date_str
+                }
+            
+            # Remove the snapshot after successful rollback
+            remove_result = self.backup_manager.remove_snapshot(change_id)
+            
             return {
-                'success': success,
+                'success': True,
                 'message': f'Rolled back to snapshot {change_id}',
                 'changeId': change_id,
-                'date': date_str
+                'date': date_str,
+                'snapshot_removed': remove_result.get('success', False)
             }
         except ValueError as e:
             return {

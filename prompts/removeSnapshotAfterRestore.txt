@@ -1,0 +1,114 @@
+# Specification: Snapshot Removal and Rollback Integration
+
+## Overview
+
+This specification defines updates to two backend components to ensure that snapshots (backups) are properly managed when performing a calendar rollback.
+
+Affected modules:
+
+* **`change_backup_manager.py`** — handles storing, listing, and now deleting backups.
+* **`calendar_commands.py`** — executes rollback operations and integrates with the backup manager.
+
+---
+
+## 1. New Method in `change_backup_manager.py`
+
+### Method Name
+
+`remove_snapshot(snapshot_id: str) -> dict`
+
+### Description
+
+This method permanently removes a snapshot entry from the `day_snapshots` table in Supabase.
+
+### Behavior
+
+* Accepts a single argument `snapshot_id` (UUID string).
+* Locates and deletes the matching record in the `day_snapshots` table.
+* Returns a dictionary with:
+
+  ```json
+  {
+    "success": true,
+    "id": "<snapshot_id>"
+  }
+  ```
+
+  or, in case of failure:
+
+  ```json
+  {
+    "success": false,
+    "error": "<error message>"
+  }
+  ```
+
+### Example Implementation (Pseudocode)
+
+```python
+def remove_snapshot(self, snapshot_id: str) -> dict:
+    try:
+        response = self.client.table("day_snapshots").delete().eq("id", snapshot_id).execute()
+        return {"success": True, "id": snapshot_id}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+```
+
+---
+
+## 2. Modify `rollback` Method in `calendar_commands.py`
+
+### Description
+
+The rollback method restores a previous calendar state and removes the associated snapshot after successful restoration.
+
+### New Behavior
+
+1. **Retrieve the snapshot** by ID using existing logic.
+2. **Revert the calendar state** using the stored grid or CSV data from the snapshot.
+3. **Verify rollback success** — ensure the current state matches the snapshot state or no exception occurred.
+4. **Remove the snapshot** by calling `ChangeBackupManager.remove_snapshot(snapshot_id)`.
+5. **Return a structured response** summarizing the rollback and cleanup.
+
+### Example Workflow
+
+```python
+def rollback(self, date: str, change_id: str):
+    # Step 1: Retrieve the snapshot
+    snapshot = self.backup_manager.get_snapshot(change_id)
+    if not snapshot:
+        return {"success": False, "error": "Snapshot not found"}
+
+    # Step 2: Restore calendar state
+    self.restore_state(snapshot["state_csv"], date)
+
+    # Step 3: Remove snapshot after rollback
+    delete_result = self.backup_manager.remove_snapshot(change_id)
+
+    return {
+        "success": True,
+        "action": "rollback",
+        "date": date,
+        "rolled_back_to": change_id,
+        "snapshot_removed": delete_result["success"]
+    }
+```
+
+---
+
+## 3. Expected Outcomes
+
+* Snapshots are automatically deleted once their state has been successfully rolled back.
+* The `day_snapshots` table remains clean and free of obsolete backups.
+* The rollback response confirms both the rollback and snapshot removal status.
+
+---
+
+## 4. Summary of Changes
+
+| File                       | Change                  | Description                                         |
+| -------------------------- | ----------------------- | --------------------------------------------------- |
+| `change_backup_manager.py` | Add `remove_snapshot()` | Deletes a snapshot from Supabase by ID              |
+| `calendar_commands.py`     | Update `rollback()`     | Calls `remove_snapshot()` after successful rollback |
+
+---
