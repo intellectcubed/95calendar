@@ -41,3 +41,8 @@ async def execute(request: Request):
         return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# ###########################################
+# How to start:
+#  uvicorn calendar_service:app --host 0.0.0.0 --port 8000
+# ###########################################

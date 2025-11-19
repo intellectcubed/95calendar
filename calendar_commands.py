@@ -41,18 +41,19 @@ class CalendarCommands:
         else:
             self.backup_manager = None
     
-    def execute_command(self, action: str, date: str, shift_start: str = None, shift_end: str = None, squad: int = None, change_id: str = None, preview: bool = True) -> Dict:
+    def execute_command(self, action: str, date: str, **kwargs) -> Dict:
         """
         Execute a calendar command.
         
         Args:
             action: Command action (e.g., 'noCrew', 'addShift', 'obliterateShift', 'get_schedule_day', 'list_backups', 'rollback')
             date: Date in YYYYMMDD format (e.g., "20260110")
-            shift_start: Start time in HHMM format (e.g., "1800"), optional
-            shift_end: End time in HHMM format (e.g., "0600"), optional
-            squad: Squad ID (e.g., 34, 35, 42, 43, 54), optional
-            change_id: Snapshot ID for rollback action, optional
-            preview: If True, return modified grid without writing to sheets (default: True)
+            **kwargs: Additional parameters:
+                - shift_start: Start time in HHMM format (e.g., "1800")
+                - shift_end: End time in HHMM format (e.g., "0600")
+                - squad: Squad ID (e.g., 34, 35, 42, 43, 54)
+                - change_id: Snapshot ID for rollback action
+                - preview: If True, return modified grid without writing to sheets (default: True)
             
         Returns:
             Dictionary with result status, changeId, and optionally modified_grid
@@ -60,10 +61,13 @@ class CalendarCommands:
         if not action or not date:
             return {'success': False, 'error': 'Missing required parameters: action and date'}
         
+        # Extract parameters from kwargs with defaults
         date_str = date
-        shift_start_str = shift_start
-        shift_end_str = shift_end
-        squad_id = squad
+        shift_start_str = kwargs.get('shift_start')
+        shift_end_str = kwargs.get('shift_end')
+        squad_id = kwargs.get('squad')
+        change_id = kwargs.get('change_id')
+        preview = kwargs.get('preview', True)
         
         # Parse date
         date_obj = datetime.strptime(date_str, '%Y%m%d')
