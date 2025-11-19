@@ -34,13 +34,6 @@ class ChangeBackupManager:
     # Internal utilities
     # -------------------------
     @staticmethod
-    def _grid_to_csv(grid):
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerows(grid)
-        return buf.getvalue()
-
-    @staticmethod
     def _csv_to_grid(csv_text):
         reader = csv.reader(io.StringIO(csv_text))
         return [row for row in reader]
@@ -48,17 +41,16 @@ class ChangeBackupManager:
     # -------------------------
     # Core methods
     # -------------------------
-    def save_grid(self, day, grid, description="", command="", ttl_days=None):
+    def save_grid(self, day, day_json, description="", command="", ttl_days=None):
         """Save a grid snapshot and return its UUID."""
         ttl = ttl_days or self.ttl_days
-        csv_data = self._grid_to_csv(grid)
         expires_at = (datetime.utcnow() + timedelta(days=ttl)).isoformat()
 
         data = {
             "day": day,
             "description": description,
             "command": command,
-            "csv_data": csv_data,
+            "csv_data": day_json,
             "expires_at": expires_at,
         }
 
@@ -77,10 +69,7 @@ class ChangeBackupManager:
         )
         if not res.data:
             raise ValueError(f"No snapshot found with id {snapshot_id}")
-        csv_data = res.data[0]["csv_data"]
-        grid = self._csv_to_grid(csv_data)
-        print(f"✅ Reverted to snapshot {snapshot_id}")
-        return grid
+        return res.data[0]["csv_data"]
 
     def cleanup_expired_snapshots(self):
         """Delete snapshots past their TTL (expires_at < now)."""

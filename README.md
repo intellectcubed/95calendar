@@ -375,6 +375,68 @@ Both modes allow you to:
 
 The `live_test` mode is particularly useful for comprehensive testing as it uses a single dedicated "Testing" tab that's always formatted as January 2026, regardless of the actual date being tested.
 
+
+## Calendar Service API
+
+The calendar service provides both GET and POST endpoints for calendar operations.
+
+### Starting the Service
+
+```bash
+uvicorn calendar_service:app --host 0.0.0.0 --port 8000
+```
+
+### GET Endpoints (URL-based)
+
+Execute commands using query parameters:
+
+```bash
+# Get a day's schedule
+curl "http://localhost:8000/?action=get_schedule_day&date=20260110"
+
+# Execute noCrew command
+curl "http://localhost:8000/?action=noCrew&date=20260110&shift_start=1900&shift_end=2100&squad=34&preview=false"
+
+# List backups
+curl "http://localhost:8000/?action=list_backups&date=20260110"
+
+# Rollback to a snapshot
+curl "http://localhost:8000/?action=rollback&date=20260110&change_id=<snapshot-id>"
+```
+
+### POST Endpoints (JSON-based)
+
+For advanced operations, use the JSON API:
+
+**Preview Command** - Test modifications without writing to sheets:
+```bash
+curl -X POST http://localhost:8000/calendar/day/20260110/preview \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "action": "noCrew",
+    "date": "20260110",
+    "shift_start": "1900",
+    "shift_end": "2100",
+    "squad": 34,
+    "day_schedule": "<DaySchedule JSON>"
+  }'
+```
+
+**Apply External Schedule** - Apply a complete DaySchedule object:
+```bash
+curl -X POST http://localhost:8000/calendar/day/20260110/apply \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "DaySchedule": "<DaySchedule JSON>"
+  }'
+```
+
+See [JSON_API.md](JSON_API.md) for complete documentation of the JSON endpoints, including:
+- DaySchedule JSON format specification
+- Request/response examples
+- Python client examples
+- Error handling
+
 ## Files
 
 - `calendar_builder.py` - Schedule generator with territory and tango assignment

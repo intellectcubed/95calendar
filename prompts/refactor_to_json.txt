@@ -1,0 +1,101 @@
+
+## Changes to calendar_models.py
+### add to_dict() from_dict() to_json() from_json() methods to all @dataclasses
+
+
+## Changes to calendar_commands.py
+
+### 1. If the parameters contain day_schedule, do not call sheets_master.get_day, but use the parameter passed, otherwise, make the call to sheets_master
+### 2. Update execute_command()
+- After `print("Modified Schedule")`, update the preview branch:
+  - Do NOT call the formatter.
+  - Return `modified_schedule.to_json()` inside the `modified_grid` response field.
+
+### 3. Update backup behavior
+- All calls to `backup_manager` must save `day_schedule.to_json()` instead of using the formatter’s `format_day()`.
+
+### 4. Add new command: apply_external_schedule
+Signature:
+    apply_external_schedule(day: yyyymmdd, external_mod_day_schedule: json)
+
+Purpose:
+    Apply an externally provided DaySchedule to Google Calendar with a backup.
+
+Steps:
+1. Convert the DaySchedule object (external_mod_day_schedule) to CSV using:
+       self.formatter.format_day(day_schedule)
+2. Retrieve the current day's data from Sheets master.
+3. Create a backup of the current day:
+       backup_id = self.backup_manager.save_grid("apply_external_schedule", current_day_json)
+4. Post the new schedule to Google Calendar using the formatted CSV.
+5. Return:
+       {
+           "success": success,
+           "changeId": backup_id,
+           "date": date_str
+       }
+
+
+## Changes to calendar_service.py
+### add a post method called /calendar/day/{calendar_date}/apply - the format for the calendar_date is yyyymmdd eg: 20251110.  the body will be a 
+post body: 
+{
+  "DaySchedule": "json of DaySchedule object" 
+}
+
+- Call DaySchedule.from_jsom() passing in the DaySchedule json
+- Call calendar_commands.apply_external_schedule
+- return the json that is returned from apply_external_schedule
+
+### add a post method called /calendar/day/{calendar_date}/preview
+post body:
+
+{
+  "action": "noCrew",
+  "date": "20251110",
+  "shift_start": "1800",
+  "shift_end": "0600",
+  "squad": "42",
+  "day_schedule": "json of DaySchedule object" 
+}
+
+- create a DaySchedule object from the day_schedule json
+- call calendar_commands.execute_command using the post body fields.
+- Return the json returned by this method.
+
+#
+# COMPLETION STATUS ✅
+
+All refactoring steps have been completed successfully:
+
+### calendar_models.py ✅
+- All dataclasses (Squad, ShiftSegment, Shift, DaySchedule, WeekSchedule) now have:
+  - to_dict() - Convert to dictionary
+  - from_dict() - Create from dictionary
+  - to_json() - Convert to JSON string
+  - from_json() - Create from JSON string
+
+### calendar_commands.py ✅
+1. execute_command() now checks for day_schedule parameter
+   - If provided, uses it directly (supports both string JSON and DaySchedule object)
+   - Otherwise, fetches from Google Sheets
+2. Preview mode returns modified_schedule.to_json() in modified_grid field
+3. Backup system stores day_schedule.to_json() instead of formatted grid
+4. Added _apply_external_schedule() method for applying external schedules
+
+### calendar_service.py ✅
+1. POST /calendar/day/{calendar_date}/apply endpoint added
+   - Accepts DaySchedule JSON in request body
+   - Calls apply_external_schedule command
+   - Returns success status and changeId
+2. POST /calendar/day/{calendar_date}/preview endpoint added
+   - Accepts command parameters and day_schedule JSON
+   - Executes command in preview mode
+   - Returns modified schedule as JSON
+
+### Additional Files Created ✅
+- test_json_endpoints.py - Test suite for JSON serialization
+- JSON_API.md - Complete API documentation
+- README.md updated with Calendar Service API section
+
+All changes tested and verified working!

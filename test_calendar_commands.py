@@ -494,13 +494,13 @@ class TestCalendarCommands:
 
 """
 # Run all tests
-pytest test_calendar_commands_2.py -v -s
+pytest test_calendar_commands.py -v -s
 
 # Run specific test
-pytest test_calendar_commands_2.py::TestCalendarCommands::test_tc01_nocrew_partial_middle -v -s
+pytest test_calendar_commands.py::TestCalendarCommands::test_tc01_nocrew_partial_middle -v -s
 
 # Run with detailed output
-pytest test_calendar_commands_2.py -v -s --tb=short
+pytest test_calendar_commands.py -v -s --tb=short
 """
 
 if __name__ == "__main__":

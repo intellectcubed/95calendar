@@ -84,20 +84,29 @@ class CalendarCommands:
         shift_start = self._parse_time(shift_start_str) if shift_start_str else None
         shift_end = self._parse_time(shift_end_str) if shift_end_str else None
         
-        # Get current day schedule
-        day_schedule = self.sheets_master.get_day(self.spreadsheet_id, tab_name, day)
-        if not day_schedule:
-            return {'success': False, 'error': 'Could not retrieve day schedule'}
+        # Get current day schedule - use provided day_schedule if available, otherwise fetch from sheets
+        day_schedule_param = kwargs.get('day_schedule')
+        if day_schedule_param:
+            # Use provided DaySchedule (already an object or needs deserialization)
+            if isinstance(day_schedule_param, str):
+                from calendar_models import DaySchedule
+                day_schedule = DaySchedule.from_json(day_schedule_param)
+            else:
+                day_schedule = day_schedule_param
+        else:
+            # Fetch from Google Sheets
+            day_schedule = self.sheets_master.get_day(self.spreadsheet_id, tab_name, day)
+            if not day_schedule:
+                return {'success': False, 'error': 'Could not retrieve day schedule'}
         
         # Execute the command based on action
         if action == 'get_schedule_day':
             # Read-only command - return current schedule
-            grid = self.formatter.format_day(day_schedule)
             return {
                 'success': True,
                 'action': 'get_schedule_day',
                 'date': date_str,
-                'grid': grid
+                'day_schedule': day_schedule.to_json()
             }
         elif action == 'list_backups':
             # Read-only command - list backup snapshots
@@ -113,6 +122,12 @@ class CalendarCommands:
             if not change_id:
                 return {'success': False, 'error': 'change_id is required for rollback action'}
             return self.rollback(change_id, date_str)
+        elif action == 'apply_external_schedule':
+            # Apply externally provided DaySchedule
+            external_schedule_json = kwargs.get('external_mod_day_schedule')
+            if not external_schedule_json:
+                return {'success': False, 'error': 'external_mod_day_schedule is required for apply_external_schedule action'}
+            return self._apply_external_schedule(date_str, external_schedule_json, tab_name, day)
         elif action == 'noCrew':
             modified_schedule = self._no_crew(day_schedule, shift_start, shift_end, squad_id)
         elif action == 'addShift':
@@ -125,21 +140,21 @@ class CalendarCommands:
         print('Modified schedule: ')
         print(modified_schedule)
         
-        # If preview mode, return the modified grid without writing to sheets or creating backup
+        # If preview mode, return the modified schedule as JSON without writing to sheets or creating backup
         if preview:
-            modified_grid = self.formatter.format_day(modified_schedule)
             return {
                 'success': True,
                 'preview': True,
-                'modified_grid': modified_grid,
+                'modified_grid': modified_schedule.to_json(),
                 'action': action,
                 'date': date_str
             }
         
         # Save backup of original state before modification (only when actually writing, skip in test mode)
+        # Save as JSON instead of formatted grid
         backup_id = None
         if not self.live_test:
-            original_grid = self.formatter.format_day(day_schedule)
+            original_json = day_schedule.to_json()
             description = f"{action} - Squad {squad_id}" if squad_id else action
             if shift_start and shift_end:
                 description += f" ({shift_start.strftime('%H%M')}-{shift_end.strftime('%H%M')})"
@@ -153,9 +168,11 @@ class CalendarCommands:
             if squad_id:
                 command_str += f"&squad={squad_id}"
             
+            # Note: save_grid expects a grid but we're passing JSON string
+            # The backup manager will store it in csv_data field
             backup_id = self.backup_manager.save_grid(
                 day=date_str,
-                grid=original_grid,
+                day_json=original_json,
                 description=description,
                 command=command_str
             )
@@ -515,7 +532,9 @@ class CalendarCommands:
         
         try:
             # Retrieve the backup grid
-            backup_grid = self.backup_manager.revert_to_snapshot(change_id)
+            # backup_grid = self.backup_manager.revert_to_snapshot(change_id)
+            day_schedule = DaySchedule.from_json(self.backup_manager.revert_to_snapshot(change_id))
+            backup_grid = self.formatter.format_day(day_schedule)
             
             # Parse date
             date_obj = datetime.strptime(date_str, '%Y%m%d')
@@ -574,6 +593,55 @@ class CalendarCommands:
         if self.live_test or not self.backup_manager:
             return []
         return self.backup_manager.list_snapshots(date_str)
+    
+    def _apply_external_schedule(self, date_str: str, external_schedule_json: str, tab_name: str, day: int) -> Dict:
+        """
+        Apply an externally provided DaySchedule to Google Calendar with a backup.
+        
+        Args:
+            date_str: Date string in YYYYMMDD format
+            external_schedule_json: JSON string of DaySchedule object
+            tab_name: Tab name in Google Sheets
+            day: Day of month (1-31)
+            
+        Returns:
+            Dictionary with result status and changeId
+        """
+        try:
+            # Parse the external DaySchedule from JSON
+            from calendar_models import DaySchedule
+            external_schedule = DaySchedule.from_json(external_schedule_json)
+            
+            # Get current day schedule for backup
+            current_schedule = self.sheets_master.get_day(self.spreadsheet_id, tab_name, day)
+            if not current_schedule:
+                return {'success': False, 'error': 'Could not retrieve current day schedule'}
+            
+            # Create backup of current state (skip in test mode)
+            backup_id = None
+            if not self.live_test:
+                current_json = current_schedule.to_json()
+                backup_id = self.backup_manager.save_grid(
+                    day=date_str,
+                    day_json=current_json,
+                    description="apply_external_schedule",
+                    command=f"action=apply_external_schedule&date={date_str}"
+                )
+            
+            # Write the external schedule to Google Sheets
+            success = self.sheets_master.put_day(self.spreadsheet_id, tab_name, day, external_schedule)
+            
+            return {
+                'success': success,
+                'changeId': backup_id,
+                'action': 'apply_external_schedule',
+                'date': date_str
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Failed to apply external schedule: {str(e)}'
+            }
     
     def _write_grid_to_sheet(self, spreadsheet_id: str, tab_name: str, day: int, grid: List[List[str]]) -> bool:
         """
