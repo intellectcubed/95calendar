@@ -31,7 +31,7 @@ class TerritoryAssignment:
 class GoogleSheetsMaster:
     """Manages Google Sheets operations for rescue squad scheduling."""
     
-    def __init__(self, credentials_path: str = 'credentials.json', live_test: bool = False, 
+    def __init__(self, credentials_path: str = 'config/credentials.json', live_test: bool = False, 
                  max_retries: int = 5, retry_backoff_seconds: float = 5.0):
         """
         Initialize GoogleSheetsMaster with credentials.

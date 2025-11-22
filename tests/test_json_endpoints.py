@@ -5,7 +5,7 @@ Tests the new POST endpoints for preview and apply_external_schedule.
 """
 
 import json
-from calendar_models import DaySchedule, Shift, ShiftSegment, Squad
+from src.models.calendar_models import DaySchedule, Shift, ShiftSegment, Squad
 from datetime import time
 
 

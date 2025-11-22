@@ -8,7 +8,7 @@ import csv
 from typing import List, Optional
 from datetime import time
 from io import StringIO
-from calendar_models import DaySchedule, Shift, ShiftSegment, Squad
+from src.models.calendar_models import DaySchedule, Shift, ShiftSegment, Squad
 
 
 class ScheduleFormatter:

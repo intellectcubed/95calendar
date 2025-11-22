@@ -7,17 +7,17 @@ Processes command requests to modify schedules in Google Sheets.
 import os
 from datetime import datetime, time, timedelta
 from typing import Dict, List, Optional
-from calendar_models import Squad, ShiftSegment, Shift, DaySchedule
-from google_sheets_master import GoogleSheetsMaster
-from change_backup_manager import ChangeBackupManager
-from schedule_formatter import ScheduleFormatter
+from src.models.calendar_models import Squad, ShiftSegment, Shift, DaySchedule
+from src.integrations.google_sheets_master import GoogleSheetsMaster
+from src.integrations.change_backup_manager import ChangeBackupManager
+from src.services.schedule_formatter import ScheduleFormatter
 import calendar
 
 
 class CalendarCommands:
     """Processes calendar modification commands."""
     
-    def __init__(self, spreadsheet_id: str, credentials_path: str = 'credentials.json', testing: bool = False, live_test: bool = False, backup_ttl_days: int = 30):
+    def __init__(self, spreadsheet_id: str, credentials_path: str = 'config/credentials.json', testing: bool = False, live_test: bool = False, backup_ttl_days: int = 30):
         """
         Initialize CalendarCommands.
         

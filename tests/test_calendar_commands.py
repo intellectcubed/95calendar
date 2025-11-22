@@ -10,14 +10,14 @@ from dotenv import load_dotenv
 
 # Load environment variables FIRST, before any other imports
 # Use explicit path to ensure .env is found regardless of where pytest is run from
-env_path = Path(__file__).parent / '.env'
+env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 import pytest
 from datetime import time
-from calendar_commands import CalendarCommands
-from calendar_models import Squad, ShiftSegment, Shift, DaySchedule
-from google_sheets_master import GoogleSheetsMaster
+from src.services.calendar_commands import CalendarCommands
+from src.models.calendar_models import Squad, ShiftSegment, Shift, DaySchedule
+from src.integrations.google_sheets_master import GoogleSheetsMaster
 
 # Test configuration
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
@@ -37,7 +37,7 @@ class TestCalendarCommands:
     @pytest.fixture(scope="class")
     def sheets_master(self):
         """Initialize GoogleSheetsMaster with live_test mode."""
-        return GoogleSheetsMaster('credentials.json', live_test=True)
+        return GoogleSheetsMaster('config/credentials.json', live_test=True)
     
     @pytest.fixture(scope="class", autouse=True)
     def setup_calendar(self, sheets_master):
@@ -45,7 +45,7 @@ class TestCalendarCommands:
         Setup: Populate the Testing tab with initial squad configurations.
         This runs once before all tests in the class.
         """
-        from calendar_builder import load_template, generate_month_schedule, assign_territories, assign_tango
+        from src.services.calendar_builder import load_template, generate_month_schedule, assign_territories, assign_tango
         
         print("\n" + "="*80)
         print("SETUP: Populating Testing Calendar")

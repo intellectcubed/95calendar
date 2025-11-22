@@ -8,7 +8,7 @@ import os
 import sys
 import argparse
 from datetime import datetime
-from calendar_commands import CalendarCommands
+from src.services.calendar_commands import CalendarCommands
 
 
 class ManualCalendarUpdater:

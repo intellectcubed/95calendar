@@ -3,12 +3,12 @@
 Test script for GoogleSheetsMaster
 """
 
-from google_sheets_master import GoogleSheetsMaster
+from src.integrations.google_sheets_master import GoogleSheetsMaster
 
 # Test authentication
 try:
     print("Initializing GoogleSheetsMaster...")
-    master = GoogleSheetsMaster('credentials.json')
+    master = GoogleSheetsMaster('config/credentials.json')
     print("✓ Authentication successful!")
     print(f"✓ Service account: mrscoveragewebsite@appspot.gserviceaccount.com")
     print("\nTo test reading territories, provide a spreadsheet ID:")

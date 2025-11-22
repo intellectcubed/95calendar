@@ -3,8 +3,8 @@ import os
 from fastapi import FastAPI, Request, Body
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
-from calendar_commands import CalendarCommands
-from calendar_models import DaySchedule
+from src.services.calendar_commands import CalendarCommands
+from src.models.calendar_models import DaySchedule
 from dotenv import load_dotenv
 
 load_dotenv()

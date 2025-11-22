@@ -3,8 +3,8 @@
 Test populate calendar with January 2026
 """
 
-from calendar_builder import load_template, generate_month_schedule, assign_territories, assign_tango
-from google_sheets_master import GoogleSheetsMaster
+from src.services.calendar_builder import load_template, generate_month_schedule, assign_territories, assign_tango
+from src.integrations.google_sheets_master import GoogleSheetsMaster
 
 # Generate January 2026 schedule
 print("Generating January 2026 schedule...")
@@ -17,7 +17,7 @@ print(f"Last day: {schedule[-1].day}")
 
 # Just test the positioning logic without actually updating
 print("\nTesting calendar positioning...")
-sheets_master = GoogleSheetsMaster('credentials.json')
+sheets_master = GoogleSheetsMaster('config/credentials.json')
 
 # This will show debug output
 # sheets_master.populate_calendar(

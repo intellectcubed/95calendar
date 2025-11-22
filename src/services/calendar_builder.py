@@ -12,8 +12,8 @@ from dataclasses import asdict
 from datetime import time, date, timedelta
 from typing import List, Dict
 import calendar
-from google_sheets_master import GoogleSheetsMaster
-from calendar_models import Squad, ShiftSegment, Shift, DaySchedule, WeekSchedule
+from src.integrations.google_sheets_master import GoogleSheetsMaster
+from src.models.calendar_models import Squad, ShiftSegment, Shift, DaySchedule, WeekSchedule
 
 
 def parse_time(time_str: str) -> time:
