@@ -23,6 +23,7 @@ calendar = CalendarCommands(spreadsheet_id, live_test=False)
 # Request models for POST endpoints
 class ApplyScheduleRequest(BaseModel):
     DaySchedule: str  # JSON string of DaySchedule object
+    commands: Optional[str] = None  # Optional description of commands that led to this schedule
 
 
 class PreviewCommandRequest(BaseModel):
@@ -80,7 +81,8 @@ async def apply_external_schedule(calendar_date: str, request: ApplyScheduleRequ
         result = calendar.execute_command(
             action='apply_external_schedule',
             date=calendar_date,
-            external_mod_day_schedule=request.DaySchedule
+            external_mod_day_schedule=request.DaySchedule,
+            commands=request.commands
         )
         
         return result

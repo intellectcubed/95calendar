@@ -127,7 +127,8 @@ class CalendarCommands:
             external_schedule_json = kwargs.get('external_mod_day_schedule')
             if not external_schedule_json:
                 return {'success': False, 'error': 'external_mod_day_schedule is required for apply_external_schedule action'}
-            return self._apply_external_schedule(date_str, external_schedule_json, tab_name, day)
+            commands_description = kwargs.get('commands')
+            return self._apply_external_schedule(date_str, external_schedule_json, tab_name, day, commands_description)
         elif action == 'noCrew':
             modified_schedule = self._no_crew(day_schedule, shift_start, shift_end, squad_id)
         elif action == 'addShift':
@@ -594,7 +595,7 @@ class CalendarCommands:
             return []
         return self.backup_manager.list_snapshots(date_str)
     
-    def _apply_external_schedule(self, date_str: str, external_schedule_json: str, tab_name: str, day: int) -> Dict:
+    def _apply_external_schedule(self, date_str: str, external_schedule_json: str, tab_name: str, day: int, commands_description: Optional[str] = None) -> Dict:
         """
         Apply an externally provided DaySchedule to Google Calendar with a backup.
         
@@ -603,6 +604,7 @@ class CalendarCommands:
             external_schedule_json: JSON string of DaySchedule object
             tab_name: Tab name in Google Sheets
             day: Day of month (1-31)
+            commands_description: Optional description of commands that led to this schedule
             
         Returns:
             Dictionary with result status and changeId
@@ -621,10 +623,12 @@ class CalendarCommands:
             backup_id = None
             if not self.live_test:
                 current_json = current_schedule.to_json()
+                # Use commands_description if provided, otherwise use default
+                description = commands_description if commands_description else "apply_external_schedule"
                 backup_id = self.backup_manager.save_grid(
                     day=date_str,
                     day_json=current_json,
-                    description="apply_external_schedule",
+                    description=description,
                     command=f"action=apply_external_schedule&date={date_str}"
                 )
             

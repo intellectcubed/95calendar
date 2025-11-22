@@ -1,0 +1,25 @@
+Add JSON serialization, external schedule application, and new API endpoints
+
+- Added to_dict(), from_dict(), to_json(), from_json() to all dataclasses
+  for full JSON serialization support across calendar_models.
+
+- Updated calendar_commands:
+  - Use provided day_schedule when present; otherwise load from Sheets master.
+  - Preview path in execute_command() now returns modified_schedule.to_json()
+    instead of calling the formatter.
+  - Backups now store day_schedule.to_json() rather than formatted CSV.
+  - Added apply_external_schedule command:
+      * Accepts external DaySchedule JSON
+      * Converts to CSV via formatter
+      * Backs up current day as JSON
+      * Applies new schedule to Google Calendar
+      * Returns success status, backup ID, and date
+
+- Added new API endpoints in calendar_service:
+  - POST /calendar/day/{date}/apply to accept a DaySchedule JSON and
+    invoke apply_external_schedule.
+  - POST /calendar/day/{date}/preview to preview schedule modifications
+    using execute_command() and return JSON results.
+
+Overall: system now supports full JSON-based schedule input/output, improved
+preview behavior, safer backups, and external schedule application.

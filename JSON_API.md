@@ -76,12 +76,14 @@ curl -X POST http://localhost:8000/calendar/day/20251110/preview \
 **Request Body**:
 ```json
 {
-  "DaySchedule": "{\"day\": \"Friday\", \"shifts\": [...]}"
+  "DaySchedule": "{\"day\": \"Friday\", \"shifts\": [...]}",
+  "commands": "noCrew 1800-2100 squad 42, addShift 0700-0800 squad 54"
 }
 ```
 
 **Fields**:
 - `DaySchedule` (required): JSON string of complete DaySchedule object
+- `commands` (optional): Description of commands that led to this schedule (stored in backup for audit trail)
 
 **Response**:
 ```json
@@ -98,7 +100,8 @@ curl -X POST http://localhost:8000/calendar/day/20251110/preview \
 curl -X POST http://localhost:8000/calendar/day/20251110/apply \
   -H 'Content-Type: application/json' \
   -d '{
-    "DaySchedule": "{\"day\": \"Friday\", \"shifts\": [...]}"
+    "DaySchedule": "{\"day\": \"Friday\", \"shifts\": [...]}",
+    "commands": "noCrew 1800-2100 squad 42"
   }'
 ```
 
@@ -204,7 +207,7 @@ schedule_json = day_schedule.to_json()
 ```bash
 curl -X POST http://localhost:8000/calendar/day/20251110/apply \
   -H 'Content-Type: application/json' \
-  -d "{\"DaySchedule\": \"$schedule_json\"}"
+  -d "{\"DaySchedule\": \"$schedule_json\", \"commands\": \"Custom schedule modification\"}"
 ```
 
 4. A backup is automatically created with the returned `changeId`
@@ -254,7 +257,10 @@ if preview_response.json()["success"]:
     # Apply the modified schedule
     apply_response = requests.post(
         "http://localhost:8000/calendar/day/20251110/apply",
-        json={"DaySchedule": modified_schedule_json}
+        json={
+            "DaySchedule": modified_schedule_json,
+            "commands": "noCrew 1800-2100 squad 42"
+        }
     )
     
     if apply_response.json()["success"]:
