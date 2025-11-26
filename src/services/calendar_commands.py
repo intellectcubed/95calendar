@@ -89,7 +89,6 @@ class CalendarCommands:
         if day_schedule_param:
             # Use provided DaySchedule (already an object or needs deserialization)
             if isinstance(day_schedule_param, str):
-                from calendar_models import DaySchedule
                 day_schedule = DaySchedule.from_json(day_schedule_param)
             else:
                 day_schedule = day_schedule_param
@@ -460,7 +459,7 @@ class CalendarCommands:
         ALL_TERRITORIES = [34, 35, 42, 43, 54]
         
         # Load territory assignments from Google Sheets
-        from google_sheets_master import GoogleSheetsMaster
+        from src.integrations.google_sheets_master import GoogleSheetsMaster
         sheets_master = GoogleSheetsMaster('credentials.json')
         territory_map = sheets_master.read_territories(self.spreadsheet_id)
         
@@ -611,7 +610,6 @@ class CalendarCommands:
         """
         try:
             # Parse the external DaySchedule from JSON
-            from calendar_models import DaySchedule
             external_schedule = DaySchedule.from_json(external_schedule_json)
             
             # Get current day schedule for backup
