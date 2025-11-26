@@ -1,0 +1,36 @@
+# Lambda runtime dependencies (minimal - no web framework needed!)
+# API Gateway handles HTTP, we just process events directly
+
+# Pydantic - Required by Supabase SDK (not for our models)
+pydantic==2.12.4
+pydantic_core==2.41.5
+
+# Google Sheets integration
+google-api-python-client==2.108.0
+google-auth==2.23.4
+google-auth-httplib2==0.1.1
+google-api-core==2.28.1
+googleapis-common-protos==1.72.0
+uritemplate==4.2.0
+
+# Supabase for backup system
+supabase==2.24.0
+supabase-auth==2.24.0
+supabase-functions==2.24.0
+storage3==2.24.0
+postgrest==2.24.0
+realtime==2.24.0
+
+# AWS SDK for Secrets Manager
+boto3==1.35.0
+
+# Common dependencies
+python-dotenv==1.0.0
+requests==2.32.5
+httpx==0.28.1
+certifi==2025.11.12
+typing_extensions==4.15.0
+
+# Note: FastAPI, Pydantic, Starlette, and Mangum are NOT needed for Lambda
+# API Gateway handles HTTP routing and request/response formatting
+# This reduces Lambda package size and improves cold start time

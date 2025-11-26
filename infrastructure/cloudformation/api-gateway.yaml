@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'API Gateway with IAM authentication for Calendar Service'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+      - development
+    Description: Environment name
+
+  LambdaFunctionArn:
+    Type: String
+    Description: ARN of the Lambda function to invoke
+
+  StageName:
+    Type: String
+    Default: v1
+    Description: API Gateway stage name
+
+  VpcEndpointId:
+    Type: String
+    Default: ''
+    Description: Optional VPC Endpoint ID to restrict API access to specific VPC
+
+Conditions:
+  HasVpcEndpoint: !Not [!Equals [!Ref VpcEndpointId, '']]
+
+Resources:
+  # REST API
+  CalendarServiceApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'calendar-service-api-${Environment}'
+      Description: Calendar Command Service REST API
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: execute-api:Invoke
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:SourceVpce: !If [HasVpcEndpoint, !Ref VpcEndpointId, !Ref AWS::NoValue]
+
+  # Root resource (/) for GET endpoint
+  RootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      ResourceId: !GetAtt CalendarServiceApi.RootResourceId
+      HttpMethod: GET
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+
+  # /calendar resource
+  CalendarResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      ParentId: !GetAtt CalendarServiceApi.RootResourceId
+      PathPart: calendar
+
+  # /calendar/day resource
+  CalendarDayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      ParentId: !Ref CalendarResource
+      PathPart: day
+
+  # /calendar/day/{calendar_date} resource
+  CalendarDateResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      ParentId: !Ref CalendarDayResource
+      PathPart: '{calendar_date}'
+
+  # /calendar/day/{calendar_date}/apply resource
+  CalendarApplyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      ParentId: !Ref CalendarDateResource
+      PathPart: apply
+
+  # POST /calendar/day/{calendar_date}/apply
+  CalendarApplyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      ResourceId: !Ref CalendarApplyResource
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
+  # /calendar/day/{calendar_date}/preview resource
+  CalendarPreviewResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      ParentId: !Ref CalendarDateResource
+      PathPart: preview
+
+  # POST /calendar/day/{calendar_date}/preview
+  CalendarPreviewMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      ResourceId: !Ref CalendarPreviewResource
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
+  # API Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - RootMethod
+      - CalendarApplyMethod
+      - CalendarPreviewMethod
+    Properties:
+      RestApiId: !Ref CalendarServiceApi
+      Description: !Sub 'Deployment for ${Environment}'
+
+  # API Stage
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      StageName: !Ref StageName
+      RestApiId: !Ref CalendarServiceApi
+      DeploymentId: !Ref ApiDeployment
+      Description: !Sub '${Environment} stage'
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          # Logging disabled - requires account-level CloudWatch role setup
+          # See: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-logging.html
+          MetricsEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: CalendarService
+
+  # IAM policy for clients to invoke the API
+  CalendarServiceApiInvokePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'calendar-service-api-invoke-${Environment}'
+      Description: Policy to allow invoking the Calendar Service API
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - execute-api:Invoke
+            Resource:
+              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${CalendarServiceApi}/${StageName}/GET/'
+              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${CalendarServiceApi}/${StageName}/POST/calendar/day/*/apply'
+              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${CalendarServiceApi}/${StageName}/POST/calendar/day/*/preview'
+
+Outputs:
+  ApiId:
+    Description: API Gateway ID
+    Value: !Ref CalendarServiceApi
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiId'
+
+  ApiUrl:
+    Description: API Gateway invoke URL
+    Value: !Sub 'https://${CalendarServiceApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  ApiInvokePolicyArn:
+    Description: ARN of the IAM policy for invoking the API
+    Value: !Ref CalendarServiceApiInvokePolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiInvokePolicyArn'

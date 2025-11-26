@@ -1,20 +1,13 @@
 # calendar_service.py
-import os
 from fastapi import FastAPI, Request, Body
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from src.services.calendar_commands import CalendarCommands
 from src.models.calendar_models import DaySchedule
-from dotenv import load_dotenv
+from src.config.aws_config import config
 
-load_dotenv()
-
-spreadsheet_id = os.environ.get('SPREADSHEET_ID')
-if not spreadsheet_id:
-    raise EnvironmentError(
-        "SPREADSHEET_ID environment variable is not set.\n"
-        "Please set it in .env file or with: export SPREADSHEET_ID='your-spreadsheet-id'"
-    )
+# Load configuration (supports both local .env and AWS Secrets Manager)
+spreadsheet_id = config.get_required('SPREADSHEET_ID')
 
 app = FastAPI(title="Calendar Command Service")
 calendar = CalendarCommands(spreadsheet_id, live_test=False)

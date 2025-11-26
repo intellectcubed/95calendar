@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Lambda function and Layer for Calendar Service'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+      - development
+    Description: Environment name
+
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment packages
+
+  LambdaCodeKey:
+    Type: String
+    Description: S3 key for Lambda function code package
+    Default: calendar-service/function.zip
+
+  LambdaLayerKey:
+    Type: String
+    Description: S3 key for Lambda layer package
+    Default: calendar-service/layer.zip
+
+  GoogleCredentialsSecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret containing Google credentials JSON
+    Default: ''
+
+Resources:
+  # Lambda execution role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'calendar-service-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:calendar-service-secrets-${Environment}-*'
+                  - !If [HasGoogleCredentials, !Ref GoogleCredentialsSecretArn, !Ref AWS::NoValue]
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: CalendarService
+
+  # Lambda Layer for dependencies
+  CalendarServiceLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub 'calendar-service-dependencies-${Environment}'
+      Description: Python dependencies for Calendar Service
+      Content:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaLayerKey
+      CompatibleRuntimes:
+        - python3.11
+        - python3.12
+
+  # Lambda function
+  CalendarServiceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'calendar-service-${Environment}'
+      Description: Calendar Command Service API
+      Runtime: python3.12
+      Handler: src.api.lambda_handler_simple.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Layers:
+        - !Ref CalendarServiceLayer
+      Environment:
+        Variables:
+          SECRET_NAME: !Sub 'calendar-service-secrets-${Environment}'
+          ENVIRONMENT: !Ref Environment
+          GOOGLE_CREDENTIALS_SECRET: !If [HasGoogleCredentials, !Ref GoogleCredentialsSecretArn, '']
+      Timeout: 60
+      MemorySize: 512
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: CalendarService
+
+  # CloudWatch Log Group
+  CalendarServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/calendar-service-${Environment}'
+      RetentionInDays: 30
+
+  # Lambda permission for API Gateway
+  ApiGatewayInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CalendarServiceFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*'
+
+Conditions:
+  HasGoogleCredentials: !Not [!Equals [!Ref GoogleCredentialsSecretArn, '']]
+
+Outputs:
+  FunctionArn:
+    Description: ARN of the Lambda function
+    Value: !GetAtt CalendarServiceFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionArn'
+
+  FunctionName:
+    Description: Name of the Lambda function
+    Value: !Ref CalendarServiceFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionName'
+
+  LayerArn:
+    Description: ARN of the Lambda Layer
+    Value: !Ref CalendarServiceLayer
+    Export:
+      Name: !Sub '${AWS::StackName}-LayerArn'

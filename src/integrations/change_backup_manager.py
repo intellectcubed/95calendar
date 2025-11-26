@@ -3,12 +3,8 @@ import io
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from dotenv import load_dotenv
 from supabase import create_client, Client
-
-# Load environment variables from .env file
-# This ensures SUPABASE_URL and SUPABASE_KEY are available
-load_dotenv()
+from src.config.aws_config import config
 
 
 class ChangeBackupManager:
@@ -20,8 +16,9 @@ class ChangeBackupManager:
     def __init__(self, default_ttl_days=30):
         self.ttl_days = default_ttl_days
 
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
+        # Use ConfigManager which supports both .env and Secrets Manager
+        supabase_url = config.get("SUPABASE_URL")
+        supabase_key = config.get("SUPABASE_KEY")
 
         if not supabase_url or not supabase_key:
             raise EnvironmentError(

@@ -31,10 +31,13 @@ deactivate
 Install required Python packages (with virtual environment activated):
 
 ```bash
-pip install -r requirements.txt
+# For local development (includes all dependencies)
+pip install -r requirements-dev.txt
 ```
 
-This installs the Google Sheets API client libraries needed for the GoogleSheetsMaster class.
+**Note**: The project uses split requirements files:
+- `requirements-lambda.txt` - Production dependencies for AWS Lambda
+- `requirements-dev.txt` - All dependencies for local development (recommended)
 
 ### 3. Environment Variables
 
@@ -380,10 +383,34 @@ The `live_test` mode is particularly useful for comprehensive testing as it uses
 
 The calendar service provides both GET and POST endpoints for calendar operations.
 
-### Starting the Service
+### Deployment Options
+
+The service supports two deployment modes:
+
+1. **Local Development** - Traditional uvicorn server
+2. **AWS Lambda** - Serverless deployment with API Gateway
+
+### Starting the Service Locally
 
 ```bash
-uvicorn calendar_service:app --host 0.0.0.0 --port 8000
+# Start with auto-reload for development
+uvicorn src.api.calendar_service:app --host 0.0.0.0 --port 8000 --reload
+
+# Or without reload
+uvicorn src.api.calendar_service:app --host 0.0.0.0 --port 8000
+```
+
+### Deploying to AWS Lambda
+
+See [AWS Deployment Guide](infrastructure/AWS_DEPLOYMENT.md) for complete instructions.
+
+Quick deploy:
+```bash
+export SPREADSHEET_ID="your-spreadsheet-id"
+export SUPABASE_URL="your-supabase-url"
+export SUPABASE_KEY="your-supabase-key"
+
+./infrastructure/scripts/deploy.sh --bucket your-s3-bucket --environment production
 ```
 
 ### GET Endpoints (URL-based)
@@ -452,6 +479,12 @@ See [JSON_API.md](JSON_API.md) for complete documentation of the JSON endpoints,
 - `*.json` - Generated schedule files
 - `*.txt` - Generated calendar text files
 - `*.csv` - Generated CSV files for Google Sheets
+
+## Deployment Guides
+
+- **[AWS Deployment Guide](infrastructure/AWS_DEPLOYMENT.md)** - Deploy to AWS Lambda with API Gateway
+- **[Local Development Guide](infrastructure/LOCAL_DEVELOPMENT.md)** - Run and develop locally
+- **[Implementation Summary](infrastructure/IMPLEMENTATION_SUMMARY.md)** - Technical details and architecture
 
 ## Documentation
 https://squidfunk.github.io/mkdocs-material/creating-your-site/

@@ -251,7 +251,7 @@ class GoogleSheetsMaster:
             month: Month number (1-12) for default tab name
             year: Year for default tab name
         """
-        from schedule_formatter import ScheduleFormatter
+        from src.services.schedule_formatter import ScheduleFormatter
         import calendar as cal
         
         # Generate default tab name if not provided
@@ -452,7 +452,7 @@ class GoogleSheetsMaster:
         Returns:
             DaySchedule object for the specified day
         """
-        from schedule_formatter import ScheduleFormatter
+        from src.services.schedule_formatter import ScheduleFormatter
         from datetime import datetime
         import calendar as cal
         
@@ -568,7 +568,7 @@ class GoogleSheetsMaster:
         Returns:
             True if successful, False otherwise
         """
-        from schedule_formatter import ScheduleFormatter
+        from src.services.schedule_formatter import ScheduleFormatter
         from datetime import datetime
         import calendar as cal
         

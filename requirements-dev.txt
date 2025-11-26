@@ -1,0 +1,21 @@
+# Development dependencies (local only)
+# Include all Lambda dependencies
+-r requirements-lambda.txt
+
+# FastAPI for local development server (NOT used in Lambda)
+fastapi==0.121.1
+pydantic==2.12.4
+pydantic_core==2.41.5
+starlette==0.49.3
+
+# Local development server
+uvicorn==0.38.0
+
+# Testing
+pytest==9.0.1
+
+# Development tools
+Pygments==2.19.2
+
+# Note: FastAPI is only needed for local development
+# Lambda uses a simple event handler (lambda_handler_simple.py)

@@ -1,0 +1,13 @@
+  {
+    "httpMethod": "GET",
+    "path": "/",
+    "queryStringParameters": {
+      "action": "get_schedule_day",
+      "date": "20260110"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": null,
+    "isBase64Encoded": false
+  }

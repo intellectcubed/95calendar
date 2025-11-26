@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Master stack for Calendar Service - orchestrates all infrastructure'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+      - development
+    Description: Environment name
+
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment packages
+
+  LambdaCodeKey:
+    Type: String
+    Default: calendar-service/function.zip
+    Description: S3 key for Lambda function code package
+
+  LambdaLayerKey:
+    Type: String
+    Default: calendar-service/layer.zip
+    Description: S3 key for Lambda layer package
+
+  StageName:
+    Type: String
+    Default: v1
+    Description: API Gateway stage name
+
+Resources:
+  # Lambda Stack
+  LambdaStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${LambdaCodeBucket}.s3.${AWS::Region}.amazonaws.com/cloudformation/lambda.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        LambdaCodeBucket: !Ref LambdaCodeBucket
+        LambdaCodeKey: !Ref LambdaCodeKey
+        LambdaLayerKey: !Ref LambdaLayerKey
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Stack
+          Value: Lambda
+
+  # API Gateway Stack
+  ApiGatewayStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: LambdaStack
+    Properties:
+      TemplateURL: !Sub 'https://${LambdaCodeBucket}.s3.${AWS::Region}.amazonaws.com/cloudformation/api-gateway.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        LambdaFunctionArn: !GetAtt LambdaStack.Outputs.FunctionArn
+        StageName: !Ref StageName
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Stack
+          Value: ApiGateway
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway invoke URL
+    Value: !GetAtt ApiGatewayStack.Outputs.ApiUrl
+    Export:
+      Name: !Sub 'CalendarService-${Environment}-ApiUrl'
+
+  ApiInvokePolicyArn:
+    Description: ARN of the IAM policy for invoking the API
+    Value: !GetAtt ApiGatewayStack.Outputs.ApiInvokePolicyArn
+    Export:
+      Name: !Sub 'CalendarService-${Environment}-InvokePolicy'
+
+  LambdaFunctionName:
+    Description: Name of the Lambda function
+    Value: !GetAtt LambdaStack.Outputs.FunctionName
+    Export:
+      Name: !Sub 'CalendarService-${Environment}-FunctionName'
