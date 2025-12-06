@@ -457,11 +457,10 @@ class CalendarCommands:
     def _reassign_tango(self, hourly_grid: Dict) -> Dict:
         """Reassign tango and territories based on current squad assignments."""
         ALL_TERRITORIES = [34, 35, 42, 43, 54]
-        
+
         # Load territory assignments from Google Sheets
-        from src.integrations.google_sheets_master import GoogleSheetsMaster
-        sheets_master = GoogleSheetsMaster('credentials.json')
-        territory_map = sheets_master.read_territories(self.spreadsheet_id)
+        # Reuse the already-initialized sheets_master instance
+        territory_map = self.sheets_master.read_territories(self.spreadsheet_id)
         
         for hour_key, hour_data in hourly_grid.items():
             squads = hour_data['squads']

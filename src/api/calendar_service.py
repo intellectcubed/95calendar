@@ -1,4 +1,5 @@
 # calendar_service.py
+import os
 from fastapi import FastAPI, Request, Body
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -6,8 +7,27 @@ from src.services.calendar_commands import CalendarCommands
 from src.models.calendar_models import DaySchedule
 from src.config.aws_config import config
 
-# Load configuration (supports both local .env and AWS Secrets Manager)
-spreadsheet_id = config.get_required('SPREADSHEET_ID')
+# Determine environment (defaults to 'test')
+environment = config.get('ENVIRONMENT', 'test').lower()
+
+# Load spreadsheet ID based on environment
+if environment == 'production':
+    spreadsheet_id = config.get_required('PROD_SPREADSHEET_ID')
+    supabase_url = config.get_required('PROD_SUPABASE_URL')
+    supabase_key = config.get_required('PROD_SUPABASE_KEY')
+    print(f"🚀 Running in PRODUCTION mode")
+else:
+    spreadsheet_id = config.get_required('TEST_SPREADSHEET_ID')
+    supabase_url = config.get_required('TEST_SUPABASE_URL')
+    supabase_key = config.get_required('TEST_SUPABASE_KEY')
+    print(f"🧪 Running in TEST mode")
+
+# Set Supabase environment variables for ChangeBackupManager
+os.environ['SUPABASE_URL'] = supabase_url
+os.environ['SUPABASE_KEY'] = supabase_key
+
+print(f"📊 Using Spreadsheet ID: {spreadsheet_id}")
+print(f"🔗 Using Supabase URL: {supabase_url}")
 
 app = FastAPI(title="Calendar Command Service")
 calendar = CalendarCommands(spreadsheet_id, live_test=False)
