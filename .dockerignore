@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Environment
+.env
+.env.local
+
+# Documentation
+*.md
+docs/
+
+# Scripts
+scripts/
+
+# Build artifacts
+build/
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lambda-specific files
+src/api/lambda_handler.py
+src/api/lambda_handler_simple.py
+requirements-lambda.txt
+
+# Development
+*.log
+.mypy_cache/
+.ruff_cache/

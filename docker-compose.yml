@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  calendar-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Mount source code for development (comment out for production)
+      - ./src:/app/src
+      # Mount credentials if using service account file
+      - ./credentials:/app/credentials:ro
+    environment:
+      # Override environment variables here if needed
+      - ENVIRONMENT=${ENVIRONMENT:-test}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

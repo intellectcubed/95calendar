@@ -47,6 +47,14 @@ class PreviewCommandRequest(BaseModel):
     squad: Optional[int] = None
     day_schedule: str  # JSON string of DaySchedule object
 
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint for container orchestration.
+    """
+    return {"status": "healthy", "service": "calendar-command-service"}
+
+
 @app.get("/")
 async def execute(request: Request):
     """
@@ -62,12 +70,12 @@ async def execute(request: Request):
         # Convert string parameters to appropriate types
         if "squad" in params:
             params["squad"] = int(params["squad"])
-        
+
         # Convert preview parameter from string to boolean
         if "preview" in params:
             preview_str = params["preview"].lower()
             params["preview"] = preview_str in ("true", "1", "yes")
-        
+
         result = calendar.execute_command(action, **params)
         return result
     except Exception as e:
