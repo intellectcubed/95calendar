@@ -29,10 +29,10 @@ This guide explains how to run the Calendar Service as a Docker container instea
 
 2. **Set up Google Service Account credentials**
 
-   Place your service account JSON file in the `credentials/` directory:
+   Place your service account JSON file at `config/credentials.json`:
    ```bash
-   mkdir -p credentials
-   cp /path/to/your/service-account.json credentials/
+   mkdir -p config
+   cp /path/to/your/service-account.json config/credentials.json
    ```
 
 3. **Start the service**
@@ -58,7 +58,7 @@ This guide explains how to run the Calendar Service as a Docker container instea
      --name calendar-service \
      -p 8000:8000 \
      --env-file .env \
-     -v $(pwd)/credentials:/app/credentials:ro \
+     -v $(pwd)/config/credentials.json:/app/config/credentials.json:ro \
      calendar-service
    ```
 
@@ -184,7 +184,7 @@ docker service create \
   --replicas 3 \
   --publish 8000:8000 \
   --env-file .env \
-  --mount type=bind,source=/path/to/credentials,target=/app/credentials,readonly \
+  --mount type=bind,source=/path/to/config/credentials.json,target=/app/config/credentials.json,readonly \
   calendar-service:latest
 ```
 

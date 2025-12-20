@@ -12,8 +12,8 @@ services:
     volumes:
       # Mount source code for development (comment out for production)
       - ./src:/app/src
-      # Mount credentials if using service account file
-      - ./credentials:/app/credentials:ro
+      # Mount credentials file (required for Google Sheets access)
+      - ./config/credentials.json:/app/config/credentials.json:ro
     environment:
       # Override environment variables here if needed
       - ENVIRONMENT=${ENVIRONMENT:-test}

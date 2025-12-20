@@ -18,7 +18,7 @@ COPY src/ ./src/
 COPY server.py .
 
 # Create directory for Google service account credentials
-RUN mkdir -p /app/credentials
+RUN mkdir -p /app/config
 
 # Expose port
 EXPOSE 8000
