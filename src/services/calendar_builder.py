@@ -269,11 +269,18 @@ def assign_territories(schedule: List[DaySchedule]) -> None:
     # Initialize GoogleSheetsMaster and read territory assignments
     from dotenv import load_dotenv
     load_dotenv()
-    
-    sheets_master = GoogleSheetsMaster('credentials.json')
-    spreadsheet_id = os.getenv('SPREADSHEET_ID')
+
+    sheets_master = GoogleSheetsMaster('config/credentials.json')
+
+    # Select spreadsheet based on environment
+    environment = os.getenv('ENVIRONMENT', 'test')
+    if environment == 'test':
+        spreadsheet_id = os.getenv('TEST_SPREADSHEET_ID')
+    else:
+        spreadsheet_id = os.getenv('PROD_SPREADSHEET_ID')
+
     if not spreadsheet_id:
-        raise ValueError("SPREADSHEET_ID not found in environment variables")
+        raise ValueError(f"{environment.upper()}_SPREADSHEET_ID not found in environment variables")
     territory_map = sheets_master.read_territories(spreadsheet_id)
     
     # Define all territories (based on squad IDs: 34, 35, 42, 43, 54)
@@ -515,12 +522,21 @@ def main():
         # Populate Google Calendar if requested
         if args.populate_google_calendar:
             print("Populating Google Calendar...")
-            sheets_master = GoogleSheetsMaster('credentials.json')
-            
+            sheets_master = GoogleSheetsMaster('config/credentials.json')
+
             # Get spreadsheet_id from args or environment
-            spreadsheet_id = args.spreadsheet_id or os.getenv('SPREADSHEET_ID')
+            if args.spreadsheet_id:
+                spreadsheet_id = args.spreadsheet_id
+            else:
+                # Select spreadsheet based on environment
+                environment = os.getenv('ENVIRONMENT', 'test')
+                if environment == 'test':
+                    spreadsheet_id = os.getenv('TEST_SPREADSHEET_ID')
+                else:
+                    spreadsheet_id = os.getenv('PROD_SPREADSHEET_ID')
+
             if not spreadsheet_id:
-                raise ValueError("SPREADSHEET_ID must be provided via --spreadsheet-id or SPREADSHEET_ID environment variable")
+                raise ValueError("Spreadsheet ID must be provided via --spreadsheet-id or TEST_SPREADSHEET_ID/PROD_SPREADSHEET_ID environment variable")
             
             # Use provided tab name or generate default
             tab_name = args.google_calendar_tab

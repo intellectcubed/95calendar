@@ -17,12 +17,18 @@ class ChangeBackupManager:
         self.ttl_days = default_ttl_days
 
         # Use ConfigManager which supports both .env and Secrets Manager
-        supabase_url = config.get("SUPABASE_URL")
-        supabase_key = config.get("SUPABASE_KEY")
+        # Select Supabase credentials based on environment
+        environment = config.get("ENVIRONMENT", "test")
+        if environment == "test":
+            supabase_url = config.get("TEST_SUPABASE_URL")
+            supabase_key = config.get("TEST_SUPABASE_KEY")
+        else:
+            supabase_url = config.get("PROD_SUPABASE_URL")
+            supabase_key = config.get("PROD_SUPABASE_KEY")
 
         if not supabase_url or not supabase_key:
             raise EnvironmentError(
-                "❌ Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_KEY."
+                f"❌ Missing Supabase credentials. Please set {environment.upper()}_SUPABASE_URL and {environment.upper()}_SUPABASE_KEY."
             )
 
         self.supabase: Client = create_client(supabase_url, supabase_key)

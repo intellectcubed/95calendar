@@ -268,8 +268,17 @@ class CalendarCommands:
                 hourly_grid[hour_key] = {'squads': [], 'tango': None}
             
             # Check if squad already exists
-            if not any(s.id == squad_id for s in hourly_grid[hour_key]['squads']):
-                hourly_grid[hour_key]['squads'].append(Squad(id=squad_id, territories=[]))
+            existing_squad = next((s for s in hourly_grid[hour_key]['squads'] if s.id == squad_id), None)
+
+            if existing_squad:
+                # Squad exists - reactivate it if inactive
+                # BUG FIX: Allow reactivation of inactive squads
+                if not existing_squad.active:
+                    existing_squad.active = True
+                    # Territories will be reassigned by _reassign_tango below
+            else:
+                # Squad doesn't exist - add it
+                hourly_grid[hour_key]['squads'].append(Squad(id=squad_id, territories=[], active=True))
             
             current_time = (datetime.combine(datetime.today(), current_time) + timedelta(hours=1)).time()
             hours_processed += 1
@@ -746,10 +755,16 @@ if __name__ == "__main__":
     import os
     from dotenv import load_dotenv
     load_dotenv()
-    
-    spreadsheet_id = os.getenv('SPREADSHEET_ID')
+
+    # Select spreadsheet based on environment
+    environment = os.getenv('ENVIRONMENT', 'test')
+    if environment == 'test':
+        spreadsheet_id = os.getenv('TEST_SPREADSHEET_ID')
+    else:
+        spreadsheet_id = os.getenv('PROD_SPREADSHEET_ID')
+
     if not spreadsheet_id:
-        raise ValueError("SPREADSHEET_ID not found in environment variables")
+        raise ValueError(f"{environment.upper()}_SPREADSHEET_ID not found in environment variables")
     
     # Example command
     commands = CalendarCommands(spreadsheet_id)

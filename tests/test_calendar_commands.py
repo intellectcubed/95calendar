@@ -20,9 +20,9 @@ from src.models.calendar_models import Squad, ShiftSegment, Shift, DaySchedule
 from src.integrations.google_sheets_master import GoogleSheetsMaster
 
 # Test configuration
-SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
+SPREADSHEET_ID = os.getenv('TEST_SPREADSHEET_ID')
 if not SPREADSHEET_ID:
-    raise ValueError("SPREADSHEET_ID not found in environment variables")
+    raise ValueError("TEST_SPREADSHEET_ID not found in environment variables")
 TAB_NAME = 'Testing'
 
 
@@ -96,7 +96,239 @@ class TestCalendarCommands:
                         f"Squad {squad_id} territories mismatch: expected {expected_territories}, got {squad.territories}"
                     return True
         return False
-    
+
+    def build_expected_schedule(self, day: str, shifts_spec: list) -> DaySchedule:
+        """
+        Build an expected DaySchedule from a simplified specification.
+
+        Args:
+            day: Day string (e.g., "Saturday 2026-01-11")
+            shifts_spec: List of shift specifications, where each shift is a dict:
+                {
+                    'start': '1800',  # HHMM format
+                    'end': '0600',    # HHMM format
+                    'tango': 42,
+                    'squads': [
+                        {'id': 35, 'territories': [], 'active': False},
+                        {'id': 42, 'territories': [42, 54], 'active': True}
+                    ]
+                }
+
+        Returns:
+            DaySchedule object
+        """
+        shifts = []
+
+        for shift_spec in shifts_spec:
+            # Parse times
+            start_str = shift_spec['start']
+            end_str = shift_spec['end']
+            start_time = time(int(start_str[:2]), int(start_str[2:]))
+            end_time = time(int(end_str[:2]), int(end_str[2:]))
+
+            # Build squads
+            squads = []
+            for squad_spec in shift_spec['squads']:
+                squad = Squad(
+                    id=squad_spec['id'],
+                    territories=squad_spec.get('territories', []),
+                    active=squad_spec.get('active', True)
+                )
+                squads.append(squad)
+
+            # Create segment (one segment per shift in this simplified model)
+            segment = ShiftSegment(
+                start_time=start_time,
+                end_time=end_time,
+                squads=squads
+            )
+
+            # Create shift with name based on times
+            shift_name = shift_spec.get('name', f'{start_time.strftime("%H:%M")} - {end_time.strftime("%H:%M")} Shift')
+
+            shift = Shift(
+                name=shift_name,
+                start_time=start_time,
+                end_time=end_time,
+                segments=[segment],
+                tango=shift_spec.get('tango', squads[0].id if squads else 0)
+            )
+
+            shifts.append(shift)
+
+        return DaySchedule(day=day, shifts=shifts)
+
+    def assert_schedules_equal(self, expected: DaySchedule, actual: DaySchedule, message: str = "") -> tuple:
+        """
+        Compare two DaySchedule objects and return whether they're equal.
+
+        Args:
+            expected: The expected DaySchedule
+            actual: The actual DaySchedule to compare
+            message: Optional message prefix for differences
+
+        Returns:
+            Tuple of (is_equal: bool, differences: str)
+            If equal, differences will be empty string
+            If not equal, differences contains detailed explanation
+        """
+        differences = []
+        prefix = f"{message}: " if message else ""
+
+        # Compare day names
+        if expected.day != actual.day:
+            differences.append(f"{prefix}Day name mismatch: expected '{expected.day}', got '{actual.day}'")
+
+        # Compare number of shifts
+        if len(expected.shifts) != len(actual.shifts):
+            differences.append(
+                f"{prefix}Number of shifts mismatch: expected {len(expected.shifts)}, got {len(actual.shifts)}"
+            )
+            # If shift counts differ, we can't compare individual shifts meaningfully
+            return (False, "\n".join(differences))
+
+        # Compare each shift
+        for i, (exp_shift, act_shift) in enumerate(zip(expected.shifts, actual.shifts)):
+            shift_prefix = f"{prefix}Shift {i}"
+
+            # Compare shift properties
+            if exp_shift.name != act_shift.name:
+                differences.append(f"{shift_prefix}: name mismatch: expected '{exp_shift.name}', got '{act_shift.name}'")
+
+            if exp_shift.start_time != act_shift.start_time:
+                differences.append(
+                    f"{shift_prefix}: start_time mismatch: expected {exp_shift.start_time}, got {act_shift.start_time}"
+                )
+
+            if exp_shift.end_time != act_shift.end_time:
+                differences.append(
+                    f"{shift_prefix}: end_time mismatch: expected {exp_shift.end_time}, got {act_shift.end_time}"
+                )
+
+            if exp_shift.tango != act_shift.tango:
+                differences.append(f"{shift_prefix}: tango mismatch: expected {exp_shift.tango}, got {act_shift.tango}")
+
+            # Compare segments
+            if len(exp_shift.segments) != len(act_shift.segments):
+                differences.append(
+                    f"{shift_prefix}: number of segments mismatch: expected {len(exp_shift.segments)}, got {len(act_shift.segments)}"
+                )
+                continue  # Skip segment comparison if counts differ
+
+            for j, (exp_seg, act_seg) in enumerate(zip(exp_shift.segments, act_shift.segments)):
+                seg_prefix = f"{shift_prefix}, Segment {j}"
+
+                # Compare segment times
+                if exp_seg.start_time != act_seg.start_time:
+                    differences.append(
+                        f"{seg_prefix}: start_time mismatch: expected {exp_seg.start_time}, got {act_seg.start_time}"
+                    )
+
+                if exp_seg.end_time != act_seg.end_time:
+                    differences.append(
+                        f"{seg_prefix}: end_time mismatch: expected {exp_seg.end_time}, got {act_seg.end_time}"
+                    )
+
+                # Compare squads
+                if len(exp_seg.squads) != len(act_seg.squads):
+                    differences.append(
+                        f"{seg_prefix}: number of squads mismatch: expected {len(exp_seg.squads)}, got {len(act_seg.squads)}"
+                    )
+                    # Show which squads are present
+                    exp_squad_ids = sorted([s.id for s in exp_seg.squads])
+                    act_squad_ids = sorted([s.id for s in act_seg.squads])
+                    differences.append(f"{seg_prefix}: expected squad IDs {exp_squad_ids}, got {act_squad_ids}")
+                    continue  # Skip individual squad comparison if counts differ
+
+                # Sort squads by ID for consistent comparison
+                exp_squads_sorted = sorted(exp_seg.squads, key=lambda s: s.id)
+                act_squads_sorted = sorted(act_seg.squads, key=lambda s: s.id)
+
+                for k, (exp_squad, act_squad) in enumerate(zip(exp_squads_sorted, act_squads_sorted)):
+                    squad_prefix = f"{seg_prefix}, Squad {k}"
+
+                    # Compare squad properties
+                    if exp_squad.id != act_squad.id:
+                        differences.append(
+                            f"{squad_prefix}: id mismatch: expected {exp_squad.id}, got {act_squad.id}"
+                        )
+
+                    if sorted(exp_squad.territories) != sorted(act_squad.territories):
+                        differences.append(
+                            f"{squad_prefix} (id={exp_squad.id}): territories mismatch: "
+                            f"expected {sorted(exp_squad.territories)}, got {sorted(act_squad.territories)}"
+                        )
+
+                    if exp_squad.active != act_squad.active:
+                        differences.append(
+                            f"{squad_prefix} (id={exp_squad.id}): active mismatch: "
+                            f"expected {exp_squad.active}, got {act_squad.active}"
+                        )
+
+        is_equal = len(differences) == 0
+        differences_str = "\n".join(differences) if differences else ""
+
+        return (is_equal, differences_str)
+
+    def clear_day(self, commands, sheets_master, day):
+        """
+        Clear all squads from a given day by obliterating all shifts.
+
+        Args:
+            commands: CalendarCommands instance
+            sheets_master: GoogleSheetsMaster instance
+            day: Day number (1-31)
+        """
+        print(f"\nClearing all squads from day {day}...")
+
+        # Get the current schedule for the day
+        schedule = self.get_day_schedule(sheets_master, day)
+
+        if not schedule or not schedule.shifts:
+            print(f"  Day {day} is already empty")
+            return
+
+        # Collect all unique squad/shift combinations to obliterate
+        obliterations = []
+        for shift in schedule.shifts:
+            shift_start = shift.start_time
+            shift_end = shift.end_time
+
+            # Get all unique squads in this shift
+            squad_ids = set()
+            for segment in shift.segments:
+                for squad in segment.squads:
+                    squad_ids.add(squad.id)
+
+            # Add obliteration for each squad
+            for squad_id in squad_ids:
+                obliterations.append({
+                    'squad_id': squad_id,
+                    'shift_start': shift_start.strftime('%H%M'),
+                    'shift_end': shift_end.strftime('%H%M')
+                })
+
+        # Execute obliterations
+        print(f"  Found {len(obliterations)} squad/shift combination(s) to remove:")
+        for obl in obliterations:
+            print(f"    Squad {obl['squad_id']}: {obl['shift_start']}-{obl['shift_end']}")
+
+            result = commands.execute_command(
+                action='obliterateShift',
+                date=f'202601{day:02d}',  # Format as YYYYMMDD (January 2026)
+                shift_start=obl['shift_start'],
+                shift_end=obl['shift_end'],
+                squad=obl['squad_id'],
+                preview=False
+            )
+
+            if not result['success']:
+                print(f"  ✗ Failed to obliterate squad {obl['squad_id']}: {result}")
+            else:
+                print(f"  ✓ Obliterated squad {obl['squad_id']}")
+
+        print(f"✓ Day {day} cleared")
+
     # ========================================================================
     # TC01: noCrew - Partial shift removal (middle hours)
     # ========================================================================
@@ -278,7 +510,7 @@ class TestCalendarCommands:
         assert len(modified_squads) >= 2, f"Should have at least 2 squads, got {len(modified_squads)}"
         
         print("✓ TC05 PASSED")
-    
+
     # ========================================================================
     # TC06: noCrew - Remove Tango for part of shift
     # ========================================================================
@@ -491,6 +723,246 @@ class TestCalendarCommands:
         assert 54 in modified_squads, "Squad 54 should be added"
         
         print("✓ TC12 PASSED")
+
+    # ========================================================================
+    # TC13: 
+    # ========================================================================
+    # def test_tc13_test_hourly_grid_respects_active_flag(self, commands, sheets_master):
+    #     """TC13: test_hourly_grid_respects_active_flag on Jan 12."""
+    #     print("\n" + "="*80)
+    #     print("TC13: addShift - Add fourth squad")
+    #     print("="*80)
+        
+    #     self.clear_day(commands, sheets_master, 12)
+
+    #     result = commands.execute_command(
+    #         action='addShift',
+    #         date='20260112',
+    #         shift_start='1800',
+    #         shift_end='0600',
+    #         squad=35,
+    #         preview=False
+    #     )
+
+    #     result = commands.execute_command(
+    #         action='addShift',
+    #         date='20260112',
+    #         shift_start='1800',
+    #         shift_end='0600',
+    #         squad=42,
+    #         preview=False
+    #     )
+
+    #     result = commands.execute_command(
+    #         action='noCrew',
+    #         date='20260112',
+    #         shift_start='1800',
+    #         shift_end='0600',
+    #         squad=35,
+    #         preview=False
+    #     )
+
+    #     result = commands.execute_command(
+    #         action='addShift',
+    #         date='20260112',
+    #         shift_start='2200',
+    #         shift_end='0600',
+    #         squad=43,
+    #         preview=False
+    #     )
+
+    #     actual = self.get_day_schedule(sheets_master, 12)
+
+    #     # Create expected DaySchedule object
+    #     # Day: 1/11/2026
+    #     # Shift 1: 1800-2200 with Squad 35 (inactive), Squad 42 (active)
+    #     # Shift 2: 2200-0600 with Squad 35 (active), Squad 42 (active)
+    #     # expected = self.build_expected_schedule(
+    #     #     day="Saturday 2026-01-11",
+    #     #     shifts_spec=[
+    #     #         {
+    #     #             'start': '1800',
+    #     #             'end': '2200',
+    #     #             'tango': 42,
+    #     #             'squads': [
+    #     #                 {'id': 35, 'territories': [], 'active': False},
+    #     #                 {'id': 42, 'territories': [42, 54], 'active': True}
+    #     #             ]
+    #     #         },
+    #     #         {
+    #     #             'start': '2200',
+    #     #             'end': '0600',
+    #     #             'tango': 35,
+    #     #             'squads': [
+    #     #                 {'id': 35, 'territories': [35, 43], 'active': True},
+    #     #                 {'id': 42, 'territories': [42, 54], 'active': True}
+    #     #             ]
+    #     #         }
+    #     #     ]
+    #     # )
+
+    #     expected = self.build_expected_schedule(
+    #         day="Monday 2026-01-12",
+    #         shifts_spec=[
+    #             {
+    #                 'start': '1800',
+    #                 'end': '2200',
+    #                 'tango': 42,
+    #                 'squads': [
+    #                     {'id': 35, 'territories': [], 'active': False},
+    #                     {'id': 42, 'territories': [34, 35, 42, 43, 54], 'active': True}
+    #                 ]
+    #             },
+    #             {
+    #                 'start': '2200',
+    #                 'end': '0600',
+    #                 'tango': 42,
+    #                 'squads': [
+    #                     {'id': 35, 'territories': [], 'active': False},
+    #                     {'id': 42, 'territories': [35, 42, 54], 'active': True},
+    #                     {'id': 43, 'territories': [34, 43], 'active': True}
+    #                 ]
+    #             }
+    #         ]
+    #     )
+
+
+    #     # Compare expected vs actual
+    #     is_equal, differences = self.assert_schedules_equal(expected, actual, "TC13")
+
+    #     if not is_equal:
+    #         print("\n" + "="*80)
+    #         print("SCHEDULE COMPARISON FAILED:")
+    #         print("="*80)
+    #         print(differences)
+    #         print("\nActual schedule:")
+    #         print(actual)
+
+    #     assert is_equal, f"Schedules should match:\n{differences}"
+
+    #     print("✓ TC13 PASSED")
+
+
+    # ========================================================================
+    # TC13: 
+    # ========================================================================
+    def test_tc14_test_hourly_grid_respects_active_flag(self, commands, sheets_master):
+        """TC13: test_hourly_grid_respects_active_flag on Jan 13."""
+        print("\n" + "="*80)
+        print("TC14: addShift - Add fourth squad")
+        print("="*80)
+        
+        # self.clear_day(commands, sheets_master, 13)
+
+        # result = commands.execute_command(
+        #     action='addShift',
+        #     date='20260113',
+        #     shift_start='1800',
+        #     shift_end='0600',
+        #     squad=35,
+        #     preview=False
+        # )
+
+        # result = commands.execute_command(
+        #     action='addShift',
+        #     date='20260113',
+        #     shift_start='1800',
+        #     shift_end='0600',
+        #     squad=42,
+        #     preview=False
+        # )
+
+        result = commands.execute_command(
+            action='noCrew',
+            date='20260113',
+            shift_start='1800',
+            shift_end='0600',
+            squad=54,
+            preview=False
+        )
+
+        result = commands.execute_command(
+            action='addShift',
+            date='20260113',
+            shift_start='2200',
+            shift_end='0600',
+            squad=54,
+            preview=False
+        )
+
+        actual = self.get_day_schedule(sheets_master, 13)
+
+        # Create expected DaySchedule object
+        # Day: 1/11/2026
+        # Shift 1: 1800-2200 with Squad 35 (inactive), Squad 42 (active)
+        # Shift 2: 2200-0600 with Squad 35 (active), Squad 42 (active)
+        expected = self.build_expected_schedule(
+            day="Tuesday 2026-01-13",
+            shifts_spec=[
+                {
+                    'start': '1800',
+                    'end': '2200',
+                    'tango': 43,
+                    'squads': [
+                        {'id': 54, 'territories': [], 'active': False},
+                        {'id': 43, 'territories': [34, 35, 42, 43, 54], 'active': True}
+                    ]
+                },
+                {
+                    'start': '2200',
+                    'end': '0600',
+                    'tango': 43,
+                    'squads': [
+                        {'id': 43, 'territories': [34, 43], 'active': True},
+                        {'id': 54, 'territories': [35, 42, 54], 'active': True}
+                    ]
+                }
+            ]
+        )
+
+        # expected = self.build_expected_schedule(
+        #     day="Monday 2026-01-12",
+        #     shifts_spec=[
+        #         {
+        #             'start': '1800',
+        #             'end': '2200',
+        #             'tango': 42,
+        #             'squads': [
+        #                 {'id': 35, 'territories': [], 'active': False},
+        #                 {'id': 42, 'territories': [34, 35, 42, 43, 54], 'active': True}
+        #             ]
+        #         },
+        #         {
+        #             'start': '2200',
+        #             'end': '0600',
+        #             'tango': 42,
+        #             'squads': [
+        #                 {'id': 35, 'territories': [], 'active': False},
+        #                 {'id': 42, 'territories': [35, 42, 54], 'active': True},
+        #                 {'id': 43, 'territories': [34, 43], 'active': True}
+        #             ]
+        #         }
+        #     ]
+        # )
+
+
+        # Compare expected vs actual
+        is_equal, differences = self.assert_schedules_equal(expected, actual, "TC14")
+
+        if not is_equal:
+            print("\n" + "="*80)
+            print("SCHEDULE COMPARISON FAILED:")
+            print("="*80)
+            print(differences)
+            print("\nActual schedule:")
+            print(actual)
+
+        assert is_equal, f"Schedules should match:\n{differences}"
+
+        print("✓ TC14 PASSED")
+
+
+
 
 """
 # Run all tests
