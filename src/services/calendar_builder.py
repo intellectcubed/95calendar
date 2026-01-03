@@ -185,42 +185,83 @@ def load_template(csv_path: str) -> Dict[int, WeekSchedule]:
     
     return template_weeks
 
+def first_template_week_for_month(month: int, year: int) -> int:
+    """
+    The template has TEMPLATE_CYCLE weeks.  Weeks roll across months.  If, for example, there are 4 weeks in the template, and the first week represents
+    January, and January has 5 "weeks" - then it will run for: 1,2,3,4,1.  If the month goes all the way till Saturday, the next month picks up from the 
+    next template week.  Otherwise use the same week for the next month.
+
+    Prints: Month: <Month name> uses weeks: <comma-separated template weeks>
+    Returns: first template week number for the month (1..4)
+    """
+    TEMPLATE_CYCLE = 4
+    ANCHOR = date(2025, 12, 28)  # Sunday starting the week that contains Jan 1, 2026
+
+    def _week_start_sunday(d: date) -> date:
+        """Return the Sunday for the week containing d (Sunday..Saturday)."""
+        return d - timedelta(days=(d.weekday() + 1) % 7)  # Mon=0..Sun=6 -> days since Sunday
+
+    def _template_week_for_week_start(week_start: date) -> int:
+        """Map a Sunday week_start to template week 1..4 using the anchor."""
+        weeks_since_anchor = (week_start - ANCHOR).days // 7
+        return (weeks_since_anchor % TEMPLATE_CYCLE) + 1
+
+
+    first_day = date(year, month, 1)
+    last_day = date(year, month, calendar.monthrange(year, month)[1])
+
+    # Start from the Sunday of the week containing the 1st of the month
+    ws = _week_start_sunday(first_day)
+
+    # Iterate Sunday week starts that cover the month
+    weeks = []
+    while ws <= last_day:
+        weeks.append(_template_week_for_week_start(ws))
+        ws += timedelta(days=7)
+
+    month_name = calendar.month_name[month]
+    print(f"Month: {month_name} uses weeks: {','.join(map(str, weeks))}")
+    return weeks[0]
+
+
 
 def generate_month_schedule(template_weeks: Dict[int, WeekSchedule], target_month: int, target_year: int) -> List[DaySchedule]:
     """Using the template, generate the schedule for the given month and year."""
     # Calculate which week template to start with for the target month
-    # January starts with Week1, then rolls forward continuously
-    
-    # Calculate total weeks from January of target year to target month
-    weeks_from_jan = 0
-    for month in range(1, target_month):
-        # Get number of weeks in each month
-        first_day = date(target_year, month, 1)
-        last_day = date(target_year, month, calendar.monthrange(target_year, month)[1])
-        
-        # Calculate weeks in this month
-        first_week = first_day.isocalendar()[1]
-        last_week = last_day.isocalendar()[1]
-        
-        # Handle year boundary
-        if last_week < first_week:  # December to January transition
-            weeks_in_month = (52 - first_week + 1) + last_week
-        else:
-            weeks_in_month = last_week - first_week + 1
-            
-        weeks_from_jan += weeks_in_month
-    
-    # Determine starting week template (1-based, cycling through available weeks)
+    # Week 1 starts on Jan 1. Each Sunday advances to the next template week.
+    # Weeks are Sunday-Saturday.
+
+    # jan_first = date(target_year, 1, 1)
+    # target_first = date(target_year, target_month, 1)
+
+    # Count how many Sundays occur from Jan 1 through the day before target month
+    # Each Sunday represents advancing to the next week in the rotation
+    # sundays_count = 0
+    # current = jan_first
+    # while current < target_first:
+    #     if current.weekday() == 6:  # Sunday (0=Mon, 6=Sun)
+    #         sundays_count += 1
+    #     current += timedelta(days=1)
+
+    # # If target month starts on Sunday, that Sunday also advances the week
+    # if target_first.weekday() == 6:
+    #     sundays_count += 1
+
+    # Starting from week 1 on Jan 1, determine which week we're on after all the advances
     max_week = max(template_weeks.keys())
-    starting_week = ((weeks_from_jan) % max_week) + 1
-    
+    starting_week = first_template_week_for_month(target_month, target_year)
+
     # Generate the month schedule
     month_schedule = []
     first_day = date(target_year, target_month, 1)
     last_day = date(target_year, target_month, calendar.monthrange(target_year, target_month)[1])
-    
+
     current_date = first_day
     current_week_template = starting_week
+
+    # Track which week templates are used (in order of first appearance)
+    weeks_used = []
+    weeks_used.append(current_week_template)
     
     while current_date <= last_day:
         # Get the day of week (0=Monday, 6=Sunday)
@@ -251,11 +292,19 @@ def generate_month_schedule(template_weeks: Dict[int, WeekSchedule], target_mont
         
         # Move to next day
         current_date += timedelta(days=1)
-        
+
         # If it's Sunday (start of new week), advance to next week template
         if current_date.weekday() == 6:  # Sunday
             current_week_template = (current_week_template % max_week) + 1
-    
+            # Track the new week template if we're still in the month
+            if current_date <= last_day:
+                weeks_used.append(current_week_template)
+
+    # Print which template weeks were used
+    weeks_str = ','.join(map(str, weeks_used))
+    month_name = calendar.month_name[target_month]
+    print(f"For {month_name} {target_year}, using template weeks: {weeks_str}")
+
     return month_schedule
 
 
@@ -573,6 +622,12 @@ def main():
     
     return 0
 
+"""
+Running: 
+python -m src.services.calendar_builder --month 3 --year 2026 --output /Users/george.nowakowski/Downloads/mar_2026.csv --populate-google-calendar
+
+Template is examples/station95template.csv
+"""
 
 if __name__ == "__main__":
     exit(main())
