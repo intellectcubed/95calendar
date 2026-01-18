@@ -427,7 +427,10 @@ class CalendarCommands:
                 end_time = time((last_hour + 1) % 24, 0)
             
             shifts.append(self._create_shift_from_hour(current_shift_start, end_time, hourly_grid))
-        
+
+        # Sort shifts chronologically (day shifts first, then night shifts in order)
+        shifts.sort(key=self._get_shift_sort_key)
+
         return DaySchedule(day=day_name, shifts=shifts)
     
     def _create_shift_from_hour(self, start_time: time, end_time: time, hourly_grid: Dict) -> Shift:
@@ -462,7 +465,34 @@ class CalendarCommands:
             segments=[segment],
             tango=tango
         )
-    
+
+    def _get_shift_sort_key(self, shift: Shift) -> int:
+        """
+        Get sort key for a shift to ensure correct chronological ordering.
+
+        Day shifts (starting 6am-5:59pm) should come before night shifts.
+        Night shifts that span midnight should be ordered by their start time
+        relative to 6pm.
+
+        Args:
+            shift: The shift to get sort key for
+
+        Returns:
+            Integer sort key where lower values come first
+        """
+        start_hour = shift.start_time.hour
+
+        # Day shift hours (6am-5:59pm): 6-17 → sort keys 6-17
+        if 6 <= start_hour < 18:
+            return start_hour
+
+        # Night shift hours (6pm-5:59am): 18-23 → sort keys 18-23
+        # and 0-5 → sort keys 24-29 (so they come after 18-23)
+        elif start_hour >= 18:
+            return start_hour
+        else:  # 0-5am (part of previous night)
+            return start_hour + 24
+
     def _reassign_tango(self, hourly_grid: Dict) -> Dict:
         """Reassign tango and territories based on current squad assignments."""
         ALL_TERRITORIES = [34, 35, 42, 43, 54]
