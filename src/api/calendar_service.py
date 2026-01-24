@@ -1,6 +1,7 @@
 # calendar_service.py
 import os
 from fastapi import FastAPI, Request, Body
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from src.services.calendar_commands import CalendarCommands
@@ -30,6 +31,16 @@ print(f"📊 Using Spreadsheet ID: {spreadsheet_id}")
 print(f"🔗 Using Supabase URL: {supabase_url}")
 
 app = FastAPI(title="Calendar Command Service")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (adjust for production)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
+
 calendar = CalendarCommands(spreadsheet_id, live_test=False)
 
 
