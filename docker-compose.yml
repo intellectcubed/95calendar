@@ -24,3 +24,10 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://calendar-service:8000
+    restart: unless-stopped
+    depends_on:
+      - calendar-service
