@@ -6,6 +6,7 @@ Command-line interface for executing calendar modification commands.
 
 import os
 import sys
+import json
 import argparse
 from datetime import datetime
 from src.services.calendar_commands import CalendarCommands
@@ -170,9 +171,23 @@ class ManualCalendarUpdater:
         
         if result.get('success'):
             print("\n✓ Schedule retrieved successfully")
-            print("\nSchedule Grid:")
-            for i, row in enumerate(result['grid']):
-                print(f"  Row {i}: {row}")
+            raw = result.get('day_schedule', '{}')
+            day_schedule = json.loads(raw) if isinstance(raw, str) else raw
+            shifts = day_schedule.get('shifts', [])
+            if shifts:
+                for shift in shifts:
+                    print(f"\n  {shift.get('name', 'Shift')} ({shift.get('start_time', '')} - {shift.get('end_time', '')})")
+                    for segment in shift.get('segments', []):
+                        squad_labels = []
+                        for s in segment.get('squads', []):
+                            sid = str(s.get('id', s))
+                            if not s.get('active', True):
+                                sid += ' [No Crew]'
+                            squad_labels.append(sid)
+                        squads = ', '.join(squad_labels)
+                        print(f"    {segment.get('start_time', '')} - {segment.get('end_time', '')}: Squads {squads}")
+            else:
+                print("\n  No shifts found for this date.")
         else:
             print(f"\n✗ Failed to retrieve schedule")
             if 'error' in result:

@@ -281,42 +281,45 @@ class ScheduleFormatter:
     def _parse_squad(self, squad_str: str) -> Optional[Squad]:
         """
         Parse squad string like "43\n[34,43]", "43\n[All]", or "43\n[No Crew]".
-        
+        Also handles bare squad IDs without territory info (e.g., "42").
+
         Args:
             squad_str: Formatted squad string
-            
+
         Returns:
             Squad object or None if invalid
         """
         parts = squad_str.split('\n')
-        if len(parts) < 2:
-            return None
-        
+
         try:
             squad_id = int(parts[0].strip())
-            territories_str = parts[1].strip()
-            
-            territories = []
-            active = True
-            
-            if territories_str == '[No Crew]':
-                # Inactive squad
-                territories = []
-                active = False
-            elif territories_str == '[All]':
-                # All territories
-                territories = [34, 35, 42, 43, 54]
-                active = True
-            else:
-                # Parse territories like "[34,43]"
-                territories_str = territories_str.strip('[]')
-                if territories_str:
-                    territories = [int(t.strip()) for t in territories_str.split(',')]
-                active = True
-            
-            return Squad(id=squad_id, territories=territories, active=active)
         except (ValueError, IndexError):
             return None
+
+        # Squad ID only — no territory line present
+        if len(parts) < 2 or not parts[1].strip():
+            return Squad(id=squad_id, territories=[], active=True)
+
+        territories_str = parts[1].strip()
+        # Normalize: strip brackets and quotes, lowercase for comparison
+        inner = territories_str.strip('[]').strip("'\"").strip().lower()
+        territories = []
+        active = True
+
+        if 'no crew' in inner:
+            territories = []
+            active = False
+        elif 'all' in inner:
+            territories = [34, 35, 42, 43, 54]
+            active = True
+        else:
+            # Parse territories like "[34,43]" or "['34','43']"
+            raw = territories_str.strip('[]')
+            if raw:
+                territories = [int(t.strip().strip("'\"")) for t in raw.split(',')]
+            active = True
+
+        return Squad(id=squad_id, territories=territories, active=active)
 
 
 # Example usage

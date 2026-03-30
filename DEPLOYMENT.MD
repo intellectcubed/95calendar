@@ -1,4 +1,14 @@
- Fresh Deployment Steps
+# Quick deployment after code change
+```shell
+
+# On mac mini
+cd /Users/gman/Projects/Python/95calendar
+
+docker-compose up -d --build calendar-service
+```
+
+---
+# Fresh Deployment Steps
 
   1. Prerequisites Check
 
